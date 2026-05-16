@@ -11,6 +11,7 @@
 import { getAssetFromKV, NotFoundError, MethodNotAllowedError } from '@cloudflare/kv-asset-handler';
 // @ts-ignore - 这是 Workers Sites 自动生成的 manifest
 import manifestJSON from '__STATIC_CONTENT_MANIFEST';
+import { handleSnippetsRequest, SnippetsEnv } from './snippets';
 
 const assetManifest = JSON.parse(manifestJSON);
 
@@ -24,7 +25,7 @@ interface KVNamespaceInterface {
     list(options?: { prefix?: string }): Promise<{ keys: Array<{ name: string; expiration?: number }> }>;
 }
 
-interface Env {
+interface Env extends SnippetsEnv {
     YNAV_WORKER_KV: KVNamespaceInterface;
     SYNC_PASSWORD?: string;
     __STATIC_CONTENT: KVNamespace;
@@ -302,6 +303,9 @@ export default {
         const url = new URL(request.url);
 
         // API 路由
+        if (url.pathname.startsWith('/api/snippets')) {
+            return handleSnippetsRequest(request, env, url);
+        }
         if (url.pathname.startsWith('/api/sync')) {
             return handleApiSync(request, env);
         }
