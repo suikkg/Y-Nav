@@ -35,7 +35,7 @@ id = "46c6f5a6db604c2e8f0831a5910e6c35"
 # ---------------------------------------------
  [[d1_databases]]
  binding = "SNIPPETS_DB"
- database_name = "y-nav-snippets"
+ database_name = "snippets-db"
  database_id = "50b2e8d4-191c-42d2-8d8d-a4a98af625bd"
 
 # 环境变量 (也可以在 Cloudflare Dashboard 中设置)
