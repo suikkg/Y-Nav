@@ -135,3 +135,17 @@ export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'pending' | 'error' | '
 // 同步 API 响应
 export interface SyncApiResponse {
 }
+
+// ============ 私有脚本库类型定义 ============
+
+export interface ScriptSnippet {
+  id: string;
+  title: string;
+  language: string;
+  code: string;
+  description?: string;
+  tags: string[];
+  favorite: boolean;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -1,0 +1,4 @@
+# Cloudflare Pages SPA fallback
+# /api/* 由 Pages Functions 处理，不进入此规则
+/scripts        /index.html   200
+/scripts/*      /index.html   200
