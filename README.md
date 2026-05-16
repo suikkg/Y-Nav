@@ -197,6 +197,39 @@ id = "你的 Namespace ID"  # ← 替换这里
 
 ---
 
+## 🗂️ 私有脚本库 (`/scripts`)
+
+主站之外内置了一个独立的私有脚本片段库，访问路径 `/scripts`。
+
+| 项目                | 说明                                                                 |
+| ------------------- | -------------------------------------------------------------------- |
+| 路由                | `https://your-domain/scripts`                                        |
+| 数据存储            | Cloudflare D1                                                        |
+| 鉴权                | 密码登录 + HMAC 签名的 HttpOnly Cookie 会话                          |
+| 后端                | 复用现有 `functions/api/snippets/*` (Pages Functions)                |
+
+### Cloudflare 后台必须的绑定
+
+在 **Pages 项目 → Settings → Functions** 中添加：
+
+1. **D1 数据库绑定**
+   - Variable name: `SNIPPETS_DB`
+   - 选择一个 D1 数据库 (如不存在请先 `wrangler d1 create y-nav-snippets`)
+   - 在该数据库上执行 `migrations/0001_create_snippets.sql` 建表
+     - 控制台执行，或 `wrangler d1 execute <DB_NAME> --remote --file=migrations/0001_create_snippets.sql`
+
+2. **环境变量 / Secrets**
+   - `SNIPPETS_PASSWORD_HASH` — 脚本库登录密码的 sha256(hex)。
+     - 生成示例 (macOS/Linux): `printf '%s' '你的密码' | shasum -a 256`
+     - 也可直接填入明文，但**强烈不推荐**。
+   - `SNIPPETS_SESSION_SECRET` — 任意长度足够 (建议 ≥32 字节) 的随机字符串，用于 HMAC 签名会话 Cookie。
+     - 生成示例: `openssl rand -base64 48`
+
+> 上述两个 secret 不要写在仓库代码或 `wrangler.toml` 里。
+> 现有的 `functions/api/sync.ts` 行为完全不受影响。
+
+---
+
 ## 🔄 同步上游更新
 
 当原仓库有新版本时：
