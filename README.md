@@ -201,32 +201,36 @@ id = "你的 Namespace ID"  # ← 替换这里
 
 主站之外内置了一个独立的私有脚本片段库，访问路径 `/scripts`。
 
-| 项目                | 说明                                                                 |
-| ------------------- | -------------------------------------------------------------------- |
-| 路由                | `https://your-domain/scripts`                                        |
-| 数据存储            | Cloudflare D1                                                        |
-| 鉴权                | 密码登录 + HMAC 签名的 HttpOnly Cookie 会话                          |
-| 后端                | 复用现有 `functions/api/snippets/*` (Pages Functions)                |
+| 项目     | 说明                                                              |
+| -------- | ----------------------------------------------------------------- |
+| 路由     | `https://your-domain/scripts`                                     |
+| 数据存储 | Cloudflare D1                                                     |
+| 鉴权     | 密码登录 + HMAC 签名的 HttpOnly Cookie 会话                       |
+| 后端     | 复用现有 Worker 入口，路由 `/api/snippets/*` 由 `worker/snippets.ts` 处理 |
 
-### Cloudflare 后台必须的绑定
+### Cloudflare 后台必须的配置 (Workers 部署)
 
-在 **Pages 项目 → Settings → Functions** 中添加：
+> 站点通过 `wrangler deploy` 部署为 Cloudflare Worker。**绑定/密钥需配置在 Worker 上，不在 Pages 上。**
 
-1. **D1 数据库绑定**
-   - Variable name: `SNIPPETS_DB`
-   - 选择一个 D1 数据库 (如不存在请先 `wrangler d1 create y-nav-snippets`)
-   - 在该数据库上执行 `migrations/0001_create_snippets.sql` 建表
-     - 控制台执行，或 `wrangler d1 execute <DB_NAME> --remote --file=migrations/0001_create_snippets.sql`
+1. **创建并绑定 D1 数据库**
+   ```bash
+   wrangler d1 create y-nav-snippets
+   # 把返回的 database_id 填入 wrangler.toml 的 [[d1_databases]] 段
+   wrangler d1 execute y-nav-snippets --remote --file=migrations/0001_create_snippets.sql
+   ```
+   绑定 variable name **必须是 `SNIPPETS_DB`** (与 `wrangler.toml` 中的 `binding` 一致)。
 
-2. **环境变量 / Secrets**
-   - `SNIPPETS_PASSWORD_HASH` — 脚本库登录密码的 sha256(hex)。
-     - 生成示例 (macOS/Linux): `printf '%s' '你的密码' | shasum -a 256`
-     - 也可直接填入明文，但**强烈不推荐**。
-   - `SNIPPETS_SESSION_SECRET` — 任意长度足够 (建议 ≥32 字节) 的随机字符串，用于 HMAC 签名会话 Cookie。
-     - 生成示例: `openssl rand -base64 48`
+2. **设置 Secrets** (CLI 推荐；也可在 Dashboard → Workers → 你的 worker → Settings → Variables 里加)
+   ```bash
+   wrangler secret put SNIPPETS_PASSWORD_HASH   # 粘贴 sha256(密码) hex
+   wrangler secret put SNIPPETS_SESSION_SECRET  # 粘贴随机串
+   ```
+   - `SNIPPETS_PASSWORD_HASH`: `printf '%s' '你的密码' | shasum -a 256`
+   - `SNIPPETS_SESSION_SECRET`: `openssl rand -base64 48`
 
-> 上述两个 secret 不要写在仓库代码或 `wrangler.toml` 里。
-> 现有的 `functions/api/sync.ts` 行为完全不受影响。
+未配置时 `/api/snippets/auth/login` 会返回 500 提示「服务端未配置」。
+
+> 现有的 `/api/sync` 行为完全不受影响。
 
 ---
 
