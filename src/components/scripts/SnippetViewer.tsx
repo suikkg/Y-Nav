@@ -84,7 +84,7 @@ const SnippetViewer: React.FC<SnippetViewerProps> = ({ snippet, onEdit, onDelete
       </div>
 
       <div className="flex-1 overflow-auto px-6 py-5">
-        <CodeBlock code={snippet.code} language={snippet.language} />
+        <CodeBlock code={snippet.code} language={snippet.language} showLineNumbers />
       </div>
     </div>
   );
