@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ArrowLeft,
     LogOut,
@@ -74,6 +74,9 @@ const ScriptsVault: React.FC<{ onExit: () => void }> = ({ onExit }) => {
         { mode: 'create' } | { mode: 'edit'; snippet: ScriptSnippet } | null
     >(null);
 
+    // 最近一次"算活动"的操作时间（点击/键盘/触屏），用于本地 10 分钟超时检测
+    const lastActivityRef = useRef<number>(Date.now());
+
     // 筛选
     const [query, setQuery] = useState('');
     const [tagFilter, setTagFilter] = useState<string>('');
@@ -126,12 +129,14 @@ const ScriptsVault: React.FC<{ onExit: () => void }> = ({ onExit }) => {
 
     // 活动续期：监听点击 / 键盘 / 触屏事件（不含 mousemove / scroll），节流后调一次
     // /auth/session 触发服务端滑动续期。后端 TTL = 10 分钟；60 秒内最多发一次心跳。
-    // 闲置 10 分钟后下一个请求会被 401，已由现有逻辑拉回登录页。
+    // 同时更新 lastActivityRef，给本地超时定时器使用。
     useEffect(() => {
         if (!sessionState?.authenticated) return;
+        lastActivityRef.current = Date.now();
         let lastBeat = Date.now();
         const beat = () => {
             const now = Date.now();
+            lastActivityRef.current = now;
             if (now - lastBeat < 60_000) return;
             lastBeat = now;
             getSession().catch(() => { /* 心跳失败由后续 API 调用处理 */ });
@@ -140,6 +145,24 @@ const ScriptsVault: React.FC<{ onExit: () => void }> = ({ onExit }) => {
         events.forEach((e) => window.addEventListener(e, beat, { passive: true }));
         return () => events.forEach((e) => window.removeEventListener(e, beat));
     }, [sessionState?.authenticated]);
+
+    // 本地超时：每 15 秒检查一次，超过 10 分钟无活动 -> 主动登出 + 提示。
+    // 与后端 TTL 一致，确保用户不会一直停在"看似登录"的页面上。
+    useEffect(() => {
+        if (!sessionState?.authenticated) return;
+        const SESSION_IDLE_MS = 10 * 60 * 1000;
+        const interval = setInterval(async () => {
+            if (Date.now() - lastActivityRef.current < SESSION_IDLE_MS) return;
+            clearInterval(interval);
+            try { await logout(); } catch { /* ignore */ }
+            setSnippets([]);
+            setSelectedId(null);
+            setEditorState(null);
+            notify('会话已超时，请重新登录', 'warning');
+            await refreshSession();
+        }, 15_000);
+        return () => clearInterval(interval);
+    }, [sessionState?.authenticated, notify, refreshSession]);
 
     const handleLoggedIn = useCallback(async () => {
         await refreshSession();
