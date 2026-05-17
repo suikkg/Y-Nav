@@ -39,7 +39,7 @@ export interface SnippetsEnv {
 }
 
 const SESSION_COOKIE_NAME = 'snippets_session';
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 天
+const SESSION_TTL_SECONDS = 60 * 10; // 10 分钟无操作过期；任何已鉴权请求会刷新 cookie 实现滑动续期
 const MAX_CODE_BYTES = 1024 * 1024;
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' } as const;
 
@@ -156,13 +156,14 @@ function getSessionCookie(request: Request): string | null {
     return cookies[SESSION_COOKIE_NAME] || null;
 }
 function buildSessionCookie(token: string): string {
+    // 会话 cookie：不设 Max-Age/Expires，浏览器关闭即失效。
+    // 服务端 token payload 自带 10 分钟 exp，闲置 10 分钟后下一次请求会被判过期。
     return [
         `${SESSION_COOKIE_NAME}=${token}`,
         'HttpOnly',
         'Secure',
         'SameSite=Lax',
         'Path=/',
-        `Max-Age=${SESSION_TTL_SECONDS}`,
     ].join('; ');
 }
 function buildClearSessionCookie(): string {
@@ -175,12 +176,22 @@ function buildClearSessionCookie(): string {
         'Max-Age=0',
     ].join('; ');
 }
-async function requireSession(request: Request, env: SnippetsEnv): Promise<Response | null> {
+async function requireSession(
+    request: Request,
+    env: SnippetsEnv,
+): Promise<{ ok: false; response: Response } | { ok: true; refreshCookie: string }> {
     const token = getSessionCookie(request);
-    if (!token) return errorResponse(401, '未登录');
+    if (!token) return { ok: false, response: errorResponse(401, '未登录') };
     const payload = await verifySessionToken(token, env);
-    if (!payload) return errorResponse(401, '会话无效或已过期');
-    return null;
+    if (!payload) return { ok: false, response: errorResponse(401, '会话无效或已过期') };
+    const fresh = await createSessionToken(env);
+    return { ok: true, refreshCookie: buildSessionCookie(fresh) };
+}
+
+function attachCookie(response: Response, cookie: string): Response {
+    const headers = new Headers(response.headers);
+    headers.append('Set-Cookie', cookie);
+    return new Response(response.body, { status: response.status, headers });
 }
 
 interface DBSnippetRow {
@@ -289,32 +300,40 @@ async function handleSession(request: Request, env: SnippetsEnv): Promise<Respon
     const token = getSessionCookie(request);
     if (!token) return jsonResponse({ success: true, authenticated: false, configured });
     const payload = await verifySessionToken(token, env);
-    return jsonResponse({
-        success: true,
-        authenticated: !!payload,
-        configured,
-        expiresAt: payload?.exp ?? null,
-    });
+    if (!payload) return jsonResponse({ success: true, authenticated: false, configured });
+    // 有效会话：滑动续期，重发 Cookie
+    const fresh = await createSessionToken(env);
+    const headers = new Headers(JSON_HEADERS);
+    headers.append('Set-Cookie', buildSessionCookie(fresh));
+    return new Response(
+        JSON.stringify({
+            success: true,
+            authenticated: true,
+            configured,
+            expiresAt: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
+        }),
+        { headers },
+    );
 }
 
 async function handleList(request: Request, env: SnippetsEnv): Promise<Response> {
-    const unauthorized = await requireSession(request, env);
-    if (unauthorized) return unauthorized;
+    const guard = await requireSession(request, env);
+    if (!guard.ok) return guard.response;
     if (!env.SNIPPETS_DB) return errorResponse(500, '服务端未绑定 SNIPPETS_DB');
     try {
         const { results } = await env.SNIPPETS_DB
             .prepare('SELECT * FROM snippets ORDER BY updated_at DESC')
             .all<DBSnippetRow>();
         const snippets: ApiSnippet[] = (results || []).map(rowToSnippet);
-        return jsonResponse({ success: true, snippets });
+        return attachCookie(jsonResponse({ success: true, snippets }), guard.refreshCookie);
     } catch (err: any) {
         return errorResponse(500, err?.message || '读取失败');
     }
 }
 
 async function handleCreate(request: Request, env: SnippetsEnv): Promise<Response> {
-    const unauthorized = await requireSession(request, env);
-    if (unauthorized) return unauthorized;
+    const guard = await requireSession(request, env);
+    if (!guard.ok) return guard.response;
     if (!env.SNIPPETS_DB) return errorResponse(500, '服务端未绑定 SNIPPETS_DB');
 
     let body: any;
@@ -352,7 +371,7 @@ async function handleCreate(request: Request, env: SnippetsEnv): Promise<Respons
         tags, favorite,
         createdAt: now, updatedAt: now,
     };
-    return jsonResponse({ success: true, snippet }, { status: 201 });
+    return attachCookie(jsonResponse({ success: true, snippet }, { status: 201 }), guard.refreshCookie);
 }
 
 async function fetchById(env: SnippetsEnv, id: string): Promise<DBSnippetRow | null> {
@@ -363,21 +382,21 @@ async function fetchById(env: SnippetsEnv, id: string): Promise<DBSnippetRow | n
 }
 
 async function handleGetOne(request: Request, env: SnippetsEnv, id: string): Promise<Response> {
-    const unauthorized = await requireSession(request, env);
-    if (unauthorized) return unauthorized;
+    const guard = await requireSession(request, env);
+    if (!guard.ok) return guard.response;
     if (!env.SNIPPETS_DB) return errorResponse(500, '服务端未绑定 SNIPPETS_DB');
     try {
         const row = await fetchById(env, id);
         if (!row) return errorResponse(404, '脚本不存在');
-        return jsonResponse({ success: true, snippet: rowToSnippet(row) });
+        return attachCookie(jsonResponse({ success: true, snippet: rowToSnippet(row) }), guard.refreshCookie);
     } catch (err: any) {
         return errorResponse(500, err?.message || '读取失败');
     }
 }
 
 async function handleUpdate(request: Request, env: SnippetsEnv, id: string): Promise<Response> {
-    const unauthorized = await requireSession(request, env);
-    if (unauthorized) return unauthorized;
+    const guard = await requireSession(request, env);
+    if (!guard.ok) return guard.response;
     if (!env.SNIPPETS_DB) return errorResponse(500, '服务端未绑定 SNIPPETS_DB');
 
     let body: any;
@@ -420,18 +439,18 @@ async function handleUpdate(request: Request, env: SnippetsEnv, id: string): Pro
         tags: tagsArr, favorite,
         createdAt: existing.created_at, updatedAt,
     };
-    return jsonResponse({ success: true, snippet });
+    return attachCookie(jsonResponse({ success: true, snippet }), guard.refreshCookie);
 }
 
 async function handleDelete(request: Request, env: SnippetsEnv, id: string): Promise<Response> {
-    const unauthorized = await requireSession(request, env);
-    if (unauthorized) return unauthorized;
+    const guard = await requireSession(request, env);
+    if (!guard.ok) return guard.response;
     if (!env.SNIPPETS_DB) return errorResponse(500, '服务端未绑定 SNIPPETS_DB');
     try {
         const row = await fetchById(env, id);
         if (!row) return errorResponse(404, '脚本不存在');
         await env.SNIPPETS_DB.prepare('DELETE FROM snippets WHERE id = ?').bind(id).run();
-        return jsonResponse({ success: true });
+        return attachCookie(jsonResponse({ success: true }), guard.refreshCookie);
     } catch (err: any) {
         return errorResponse(500, err?.message || '删除失败');
     }
