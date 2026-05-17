@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Copy, Check } from 'lucide-react';
+import { highlightCode } from './highlight';
+import './code-theme.css';
 
 interface CodeBlockProps {
   code: string;
@@ -18,10 +20,21 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const { html: highlightedHtml, language: resolvedLang } = useMemo(
+    () => highlightCode(code, language),
+    [code, language]
+  );
+
+  const highlightedLines = useMemo(() => {
+    if (!showLineNumbers) return null;
+    const lines = highlightedHtml.split('\n');
+    if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+    return lines;
+  }, [highlightedHtml, showLineNumbers]);
+
   const handleCopy = async () => {
     setError(null);
     try {
-      // 复制原始代码，不复制行号或 HTML
       await navigator.clipboard.writeText(code);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
@@ -31,13 +44,11 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
     }
   };
 
-  const lines = showLineNumbers ? code.split('\n') : null;
-
   return (
     <div className="relative group rounded-2xl border border-slate-200 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-900/70 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200/80 dark:border-slate-700/60 bg-white/60 dark:bg-slate-900/60">
         <div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-          {language || 'text'}
+          {resolvedLang || 'text'}
         </div>
         <button
           type="button"
@@ -67,23 +78,29 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
         className="overflow-auto text-sm leading-relaxed font-mono text-slate-800 dark:text-slate-100"
         style={maxHeight ? { maxHeight } : undefined}
       >
-        {showLineNumbers && lines ? (
-          <code className="block">
+        {showLineNumbers && highlightedLines ? (
+          <code className="hljs block">
             <table className="w-full border-collapse">
               <tbody>
-                {lines.map((line, idx) => (
+                {highlightedLines.map((line, idx) => (
                   <tr key={idx}>
                     <td className="select-none text-right pr-3 pl-4 text-slate-400 dark:text-slate-500 align-top w-12">
                       {idx + 1}
                     </td>
-                    <td className="pr-4 py-0 whitespace-pre">{line || ' '}</td>
+                    <td
+                      className="pr-4 py-0 whitespace-pre"
+                      dangerouslySetInnerHTML={{ __html: line || ' ' }}
+                    />
                   </tr>
                 ))}
               </tbody>
             </table>
           </code>
         ) : (
-          <code className="block px-4 py-3 whitespace-pre">{code}</code>
+          <code
+            className="hljs block px-4 py-3 whitespace-pre"
+            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+          />
         )}
       </pre>
     </div>
