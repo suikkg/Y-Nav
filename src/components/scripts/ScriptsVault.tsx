@@ -33,6 +33,15 @@ interface CustomRange {
     to: string;   // YYYY-MM-DD
 }
 
+type SearchScope = 'title' | 'description' | 'code';
+const ALL_SEARCH_SCOPES = ['title', 'description', 'code'] as const;
+const SEARCH_SCOPES_KEY = 'ynav.scripts.searchScopes';
+const SEARCH_SCOPE_LABELS: Record<SearchScope, string> = {
+    title: '标题',
+    description: '描述',
+    code: '代码内容',
+};
+
 function startOfPreset(preset: DateRangePreset, custom: CustomRange): { from: number | null; to: number | null } {
     const now = new Date();
     const y = now.getFullYear();
@@ -83,6 +92,46 @@ const ScriptsVault: React.FC<{ onExit: () => void }> = ({ onExit }) => {
     const [langFilter, setLangFilter] = useState<string>('');
     const [datePreset, setDatePreset] = useState<DateRangePreset>('all');
     const [customRange, setCustomRange] = useState<CustomRange>({ from: '', to: '' });
+    const [searchScopes, setSearchScopes] = useState<Set<SearchScope>>(() => {
+        try {
+            const stored = localStorage.getItem(SEARCH_SCOPES_KEY);
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed)) {
+                    const valid = parsed.filter((s): s is SearchScope =>
+                        (ALL_SEARCH_SCOPES as readonly string[]).includes(s)
+                    );
+                    if (valid.length > 0) return new Set(valid);
+                }
+            }
+        } catch {
+            // ignore parse errors, fall back to default
+        }
+        return new Set(ALL_SEARCH_SCOPES);
+    });
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(
+                SEARCH_SCOPES_KEY,
+                JSON.stringify(Array.from(searchScopes))
+            );
+        } catch {
+            // localStorage may be unavailable (private mode etc.) — silently ignore
+        }
+    }, [searchScopes]);
+
+    const toggleSearchScope = useCallback((scope: SearchScope) => {
+        setSearchScopes((prev) => {
+            const next = new Set(prev);
+            if (next.has(scope)) {
+                next.delete(scope);
+            } else {
+                next.add(scope);
+            }
+            return next;
+        });
+    }, []);
 
     const refreshSession = useCallback(async () => {
         try {
@@ -240,18 +289,17 @@ const ScriptsVault: React.FC<{ onExit: () => void }> = ({ onExit }) => {
             if (range.to !== null && (!Number.isNaN(updated)) && updated > range.to) return false;
 
             if (q) {
-                const hay = [
-                    s.title,
-                    s.description || '',
-                    s.code,
-                    s.tags.join(' '),
-                    s.language,
-                ].join('\n').toLowerCase();
+                const parts: string[] = [];
+                if (searchScopes.has('title')) parts.push(s.title);
+                if (searchScopes.has('description')) parts.push(s.description || '');
+                if (searchScopes.has('code')) parts.push(s.code);
+                if (parts.length === 0) return false;
+                const hay = parts.join('\n').toLowerCase();
                 if (!hay.includes(q)) return false;
             }
             return true;
         });
-    }, [snippets, query, tagFilter, langFilter, datePreset, customRange]);
+    }, [snippets, query, tagFilter, langFilter, datePreset, customRange, searchScopes]);
 
     const selected = useMemo(
         () => filtered.find((s) => s.id === selectedId) || snippets.find((s) => s.id === selectedId) || null,
@@ -358,6 +406,28 @@ const ScriptsVault: React.FC<{ onExit: () => void }> = ({ onExit }) => {
                                 ))}
                             </select>
                         </div>
+                    </div>
+
+                    <div className="flex items-center flex-wrap gap-2">
+                        <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                            <Search size={12} />
+                            范围:
+                        </span>
+                        {ALL_SEARCH_SCOPES.map((scope) => (
+                            <button
+                                key={scope}
+                                type="button"
+                                onClick={() => toggleSearchScope(scope)}
+                                aria-pressed={searchScopes.has(scope)}
+                                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                                    searchScopes.has(scope)
+                                        ? 'bg-accent text-white'
+                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                }`}
+                            >
+                                {SEARCH_SCOPE_LABELS[scope]}
+                            </button>
+                        ))}
                     </div>
 
                     <div className="flex items-center flex-wrap gap-2">
