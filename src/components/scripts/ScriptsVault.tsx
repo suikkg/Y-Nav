@@ -124,6 +124,23 @@ const ScriptsVault: React.FC<{ onExit: () => void }> = ({ onExit }) => {
         }
     }, [sessionState?.authenticated, fetchSnippets]);
 
+    // 活动续期：监听点击 / 键盘 / 触屏事件（不含 mousemove / scroll），节流后调一次
+    // /auth/session 触发服务端滑动续期。后端 TTL = 10 分钟；60 秒内最多发一次心跳。
+    // 闲置 10 分钟后下一个请求会被 401，已由现有逻辑拉回登录页。
+    useEffect(() => {
+        if (!sessionState?.authenticated) return;
+        let lastBeat = Date.now();
+        const beat = () => {
+            const now = Date.now();
+            if (now - lastBeat < 60_000) return;
+            lastBeat = now;
+            getSession().catch(() => { /* 心跳失败由后续 API 调用处理 */ });
+        };
+        const events: Array<keyof WindowEventMap> = ['mousedown', 'keydown', 'touchstart'];
+        events.forEach((e) => window.addEventListener(e, beat, { passive: true }));
+        return () => events.forEach((e) => window.removeEventListener(e, beat));
+    }, [sessionState?.authenticated]);
+
     const handleLoggedIn = useCallback(async () => {
         await refreshSession();
     }, [refreshSession]);
