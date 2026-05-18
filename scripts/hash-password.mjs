@@ -13,7 +13,7 @@
 import { webcrypto as crypto } from 'node:crypto';
 import { createInterface } from 'node:readline/promises';
 
-const ITER = 200_000; // 单次 ~50ms on M-class hardware
+const ITER = 100_000; // 单次 ~50ms on M-class hardware
 const SALT_BYTES = 16;
 const HASH_BYTES = 32;
 

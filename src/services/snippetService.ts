@@ -26,12 +26,12 @@ type ApiResult<T> = ApiOk<T> | ApiErr;
 async function request<T = unknown>(input: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(input, {
     credentials: 'include',
+    ...init,
     headers: {
       'Content-Type': 'application/json',
       'X-Requested-With': CSRF_HEADER_VALUE,
       ...(init.headers || {}),
     },
-    ...init,
   });
 
   let data: ApiResult<T> | null = null;
