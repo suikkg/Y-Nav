@@ -30,7 +30,7 @@ export const parseBookmarks = async (file: File): Promise<ImportResult> => {
   const genericRootFolders = new Set(['Bookmarks Bar', '书签栏', 'Other Bookmarks', '其他书签']);
 
   const normalizeFolderPath = (path: string[]) => {
-    const trimmed = path.map(seg => seg.trim()).filter(Boolean);
+    const trimmed = path.map((seg) => seg.trim()).filter(Boolean);
     // Strip generic root folders like "Bookmarks Bar" / "Other Bookmarks"
     while (trimmed.length > 0 && genericRootFolders.has(trimmed[0])) {
       trimmed.shift();
@@ -57,7 +57,7 @@ export const parseBookmarks = async (file: File): Promise<ImportResult> => {
     categories.push({
       id: newId,
       name,
-      icon: 'Folder'
+      icon: 'Folder',
     });
     categoryMap.set(key, { id: newId, name });
     return newId;
@@ -65,10 +65,10 @@ export const parseBookmarks = async (file: File): Promise<ImportResult> => {
 
   // Traverse the DL/DT structure
   // Chrome structure: <DT><H3>Folder Name</H3><DL> ...items... </DL>
-  
+
   const traverse = (element: Element, currentPath: string[]) => {
     const children = Array.from(element.children);
-    
+
     for (let i = 0; i < children.length; i++) {
       const node = children[i];
       const tagName = node.tagName.toUpperCase();
@@ -80,26 +80,26 @@ export const parseBookmarks = async (file: File): Promise<ImportResult> => {
         const dl = node.querySelector('dl');
 
         if (h3 && dl) {
-            // It's a folder
-            const folderName = (h3.textContent || 'Unknown').trim();
-            traverse(dl, [...currentPath, folderName]);
+          // It's a folder
+          const folderName = (h3.textContent || 'Unknown').trim();
+          traverse(dl, [...currentPath, folderName]);
         } else if (a) {
-            // It's a link
-            const title = a.textContent || a.getAttribute('href') || 'No Title';
-            const url = a.getAttribute('href');
-            
-            if (url && !url.startsWith('chrome://') && !url.startsWith('about:')) {
-                const folderPath = currentPath.length ? [...currentPath] : [];
-                links.push({
-                    id: generateId(),
-                    title: title,
-                    url: url,
-                    categoryId: getCategoryIdByFolderPath(folderPath),
-                    createdAt: Date.now(),
-                    icon: a.getAttribute('icon') || undefined,
-                    folderPath
-                });
-            }
+          // It's a link
+          const title = a.textContent || a.getAttribute('href') || 'No Title';
+          const url = a.getAttribute('href');
+
+          if (url && !url.startsWith('chrome://') && !url.startsWith('about:')) {
+            const folderPath = currentPath.length ? [...currentPath] : [];
+            links.push({
+              id: generateId(),
+              title: title,
+              url: url,
+              categoryId: getCategoryIdByFolderPath(folderPath),
+              createdAt: Date.now(),
+              icon: a.getAttribute('icon') || undefined,
+              folderPath,
+            });
+          }
         }
       }
     }

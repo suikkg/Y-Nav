@@ -20,7 +20,11 @@ interface SettingsModalProps {
   onDeleteBackup: (backupKey: string) => Promise<boolean>;
   onSyncPasswordChange: (password: string) => void;
   useSeparatePrivacyPassword: boolean;
-  onMigratePrivacyMode: (payload: { useSeparatePassword: boolean; oldPassword: string; newPassword: string }) => Promise<boolean>;
+  onMigratePrivacyMode: (payload: {
+    useSeparatePassword: boolean;
+    oldPassword: string;
+    newPassword: string;
+  }) => Promise<boolean>;
   privacyGroupEnabled: boolean;
   onTogglePrivacyGroup: (enabled: boolean) => void;
   privacyAutoUnlockEnabled: boolean;
@@ -47,7 +51,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   onTogglePrivacyGroup,
   privacyAutoUnlockEnabled,
   onTogglePrivacyAutoUnlock,
-  closeOnBackdrop = true
+  closeOnBackdrop = true,
 }) => {
   const [activeTab, setActiveTab] = useState<'site' | 'ai' | 'appearance' | 'data'>('site');
   const [localConfig, setLocalConfig] = useState<AIConfig>(config);
@@ -60,7 +64,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     closeOnBackdrop: siteSettings?.closeOnBackdrop ?? false,
     backgroundImage: siteSettings?.backgroundImage || '',
     backgroundImageEnabled: siteSettings?.backgroundImageEnabled ?? false,
-    backgroundMotion: siteSettings?.backgroundMotion ?? false
+    backgroundMotion: siteSettings?.backgroundMotion ?? false,
   }));
 
   useEffect(() => {
@@ -75,18 +79,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         closeOnBackdrop: siteSettings?.closeOnBackdrop ?? false,
         backgroundImage: siteSettings?.backgroundImage || '',
         backgroundImageEnabled: siteSettings?.backgroundImageEnabled ?? false,
-        backgroundMotion: siteSettings?.backgroundMotion ?? false
+        backgroundMotion: siteSettings?.backgroundMotion ?? false,
       });
       setActiveTab('site');
     }
   }, [isOpen, config, siteSettings]);
 
   const handleChange = (key: keyof AIConfig, value: string) => {
-    setLocalConfig(prev => ({ ...prev, [key]: value }));
+    setLocalConfig((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleSiteChange = (key: keyof SiteSettings, value: any) => {
-    setLocalSiteSettings(prev => ({ ...prev, [key]: value }));
+    setLocalSiteSettings((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleSave = () => {
@@ -123,40 +127,44 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl">
             <button
               onClick={() => setActiveTab('site')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'site'
-                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                }`}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                activeTab === 'site'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
             >
               <Globe size={16} />
               <span>网站设置</span>
             </button>
             <button
               onClick={() => setActiveTab('ai')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'ai'
-                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                }`}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                activeTab === 'ai'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
             >
               <Bot size={16} />
               <span>AI 助手</span>
             </button>
             <button
               onClick={() => setActiveTab('appearance')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'appearance'
-                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                }`}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                activeTab === 'appearance'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
             >
               <Palette size={16} />
               <span>外观</span>
             </button>
             <button
               onClick={() => setActiveTab('data')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeTab === 'data'
-                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                }`}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                activeTab === 'data'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
             >
               <Database size={16} />
               <span>数据</span>

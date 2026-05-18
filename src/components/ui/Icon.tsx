@@ -8,7 +8,7 @@ interface IconProps {
 }
 
 const Icon: React.FC<IconProps> = ({ name, size = 20, className }) => {
-  // @ts-ignore - Dynamic access to Lucide icons
+  // @ts-expect-error - Dynamic access to Lucide icons
   const IconComponent = LucideIcons[name] || LucideIcons.Link;
   return <IconComponent size={size} className={className} />;
 };

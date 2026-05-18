@@ -1,0 +1,51 @@
+# ============================================
+# Y-Nav CI: typecheck + lint + format check
+# ============================================
+# 触发条件:
+#   - 推送到 main 分支
+#   - 任意 Pull Request
+# ============================================
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    name: Typecheck / Lint / Format
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck (frontend)
+        run: npx tsc --noEmit
+
+      - name: Typecheck (worker)
+        run: npx tsc --noEmit -p worker/tsconfig.json
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build smoke test
+        run: npm run build

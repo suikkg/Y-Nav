@@ -28,7 +28,10 @@ export const normalizeHexColor = (value?: string) => {
   const hex = toHex(value);
   if (/^[0-9a-fA-F]{6}$/.test(hex)) return `#${hex.toLowerCase()}`;
   if (/^[0-9a-fA-F]{3}$/.test(hex)) {
-    const expanded = hex.split('').map(ch => `${ch}${ch}`).join('');
+    const expanded = hex
+      .split('')
+      .map((ch) => `${ch}${ch}`)
+      .join('');
     return `#${expanded.toLowerCase()}`;
   }
   return null;
@@ -56,6 +59,6 @@ export const getIconToneStyle = (hexColor?: string) => {
   if (!rgb) return undefined;
   return {
     backgroundColor: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2)`,
-    color: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`
+    color: `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`,
   };
 };

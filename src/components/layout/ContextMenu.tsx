@@ -25,7 +25,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   onDuplicateLink,
   onMoveLink,
   onDeleteLink,
-  onTogglePin
+  onTogglePin,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -62,7 +62,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   // 确保菜单位置不会超出屏幕边界
   const adjustedPosition = {
     x: Math.min(position.x, window.innerWidth - 400),
-    y: Math.min(position.y, window.innerHeight - 300)
+    y: Math.min(position.y, window.innerHeight - 300),
   };
 
   const menuItems = [
@@ -71,12 +71,17 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
     {
       icon: FolderInput,
       label: '转移分组',
-      onClick: () => { },
-      hasSubmenu: true
+      onClick: () => {},
+      hasSubmenu: true,
     },
     { icon: Edit2, label: '编辑链接', onClick: onEditLink },
     { icon: Pin, label: '置顶/取消置顶', onClick: onTogglePin },
-    { icon: Trash2, label: '删除链接', onClick: onDeleteLink, className: 'text-red-500 dark:text-red-400' }
+    {
+      icon: Trash2,
+      label: '删除链接',
+      onClick: onDeleteLink,
+      className: 'text-red-500 dark:text-red-400',
+    },
   ];
 
   return (
@@ -85,7 +90,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
       className="fixed z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/60 rounded-xl shadow-xl py-1.5 min-w-[180px] backdrop-blur-sm bg-white/95 dark:bg-slate-900/95"
       style={{
         left: adjustedPosition.x,
-        top: adjustedPosition.y
+        top: adjustedPosition.y,
       }}
     >
       {menuItems.map((item, index) => (
@@ -98,11 +103,15 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
               item.onClick();
               onClose();
             }}
-            className={`w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${item.className || 'text-slate-700 dark:text-slate-300'
-              }`}
+            className={`w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${
+              item.className || 'text-slate-700 dark:text-slate-300'
+            }`}
           >
             <div className="flex items-center gap-3">
-              <item.icon size={15} className={item.className || 'text-slate-500 dark:text-slate-400'} />
+              <item.icon
+                size={15}
+                className={item.className || 'text-slate-500 dark:text-slate-400'}
+              />
               <span>{item.label}</span>
             </div>
             {item.hasSubmenu && <ChevronRight size={14} className="text-slate-400" />}

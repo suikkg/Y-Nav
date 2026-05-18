@@ -1,0 +1,8 @@
+node_modules
+dist
+.wrangler
+coverage
+package-lock.json
+public
+*.min.js
+*.min.css

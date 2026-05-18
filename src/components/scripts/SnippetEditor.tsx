@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X, Save, Loader2 } from 'lucide-react';
 import { ScriptSnippet } from '../../types';
 import { SnippetInput } from '../../services/snippetService';
+import MonacoCodeEditor from './MonacoCodeEditor';
 
 interface SnippetEditorProps {
   initial?: ScriptSnippet | null;
@@ -40,60 +41,257 @@ const LANGUAGES = [
   'swift',
 ];
 
+const DRAFT_KEY_PREFIX = 'ynav.scripts.draft.';
+const DRAFT_SAVE_DELAY_MS = 2000;
+
+interface DraftPayload {
+  title: string;
+  language: string;
+  tagsText: string;
+  description: string;
+  code: string;
+  favorite: boolean;
+  savedAt: number;
+}
+
+function draftKeyFor(initial?: ScriptSnippet | null): string {
+  return `${DRAFT_KEY_PREFIX}${initial?.id || 'new'}`;
+}
+
+function loadDraft(key: string): DraftPayload | null {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as DraftPayload;
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(key: string, payload: Omit<DraftPayload, 'savedAt'>): void {
+  try {
+    sessionStorage.setItem(key, JSON.stringify({ ...payload, savedAt: Date.now() }));
+  } catch {
+    // sessionStorage 不可用（隐私模式等）— 忽略
+  }
+}
+
+function clearDraft(key: string): void {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
+function buildInitialState(snippet?: ScriptSnippet | null) {
+  return {
+    title: snippet?.title || '',
+    language: snippet?.language || 'text',
+    tagsText: (snippet?.tags || []).join(', '),
+    description: snippet?.description || '',
+    code: snippet?.code || '',
+    favorite: !!snippet?.favorite,
+  };
+}
+
+function statesEqual(
+  a: ReturnType<typeof buildInitialState>,
+  b: ReturnType<typeof buildInitialState>,
+): boolean {
+  return (
+    a.title === b.title &&
+    a.language === b.language &&
+    a.tagsText === b.tagsText &&
+    a.description === b.description &&
+    a.code === b.code &&
+    a.favorite === b.favorite
+  );
+}
+
+// ============================================
+// 焦点陷阱 & Esc 关闭
+// ============================================
+
+function useFocusTrap(containerRef: React.RefObject<HTMLElement | null>, active: boolean): void {
+  useEffect(() => {
+    if (!active || !containerRef.current) return;
+    const container = containerRef.current;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+
+    function getFocusable(): HTMLElement[] {
+      return Array.from(
+        container.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.offsetParent !== null);
+    }
+
+    function handleKey(e: KeyboardEvent) {
+      if (e.key !== 'Tab') return;
+      const focusable = getFocusable();
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const current = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && (current === first || !container.contains(current))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && current === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    container.addEventListener('keydown', handleKey);
+    return () => {
+      container.removeEventListener('keydown', handleKey);
+      previouslyFocused?.focus?.();
+    };
+  }, [active, containerRef]);
+}
+
+function useEscClose(onClose: () => void, active: boolean): void {
+  useEffect(() => {
+    if (!active) return;
+    function handle(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    }
+    document.addEventListener('keydown', handle);
+    return () => document.removeEventListener('keydown', handle);
+  }, [active, onClose]);
+}
+
+// ============================================
+// 组件
+// ============================================
+
 const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubmit }) => {
-  const [title, setTitle] = useState(initial?.title || '');
-  const [language, setLanguage] = useState(initial?.language || 'text');
-  const [tagsText, setTagsText] = useState((initial?.tags || []).join(', '));
-  const [description, setDescription] = useState(initial?.description || '');
-  const [code, setCode] = useState(initial?.code || '');
-  const [favorite, setFavorite] = useState(!!initial?.favorite);
+  const initialState = useMemo(() => buildInitialState(initial), [initial]);
+
+  const [title, setTitle] = useState(initialState.title);
+  const [language, setLanguage] = useState(initialState.language);
+  const [tagsText, setTagsText] = useState(initialState.tagsText);
+  const [description, setDescription] = useState(initialState.description);
+  const [code, setCode] = useState(initialState.code);
+  const [favorite, setFavorite] = useState(initialState.favorite);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draftRestoredFrom, setDraftRestoredFrom] = useState<number | null>(null);
 
+  const containerRef = useRef<HTMLFormElement>(null);
+  const draftKey = draftKeyFor(initial);
+
+  // 重置当 initial 改变
   useEffect(() => {
-    setTitle(initial?.title || '');
-    setLanguage(initial?.language || 'text');
-    setTagsText((initial?.tags || []).join(', '));
-    setDescription(initial?.description || '');
-    setCode(initial?.code || '');
-    setFavorite(!!initial?.favorite);
+    const s = buildInitialState(initial);
+    setTitle(s.title);
+    setLanguage(s.language);
+    setTagsText(s.tagsText);
+    setDescription(s.description);
+    setCode(s.code);
+    setFavorite(s.favorite);
+    setError(null);
+    setDraftRestoredFrom(null);
   }, [initial]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) {
-      setError('请输入标题');
+  // 加载草稿（仅在打开时检查，且草稿与原始不同时才恢复）
+  useEffect(() => {
+    const draft = loadDraft(draftKey);
+    if (!draft) return;
+    const draftState = {
+      title: draft.title,
+      language: draft.language,
+      tagsText: draft.tagsText,
+      description: draft.description,
+      code: draft.code,
+      favorite: draft.favorite,
+    };
+    if (statesEqual(draftState, initialState)) {
+      clearDraft(draftKey);
       return;
     }
-    if (!code) {
-      setError('代码不能为空');
+    setTitle(draft.title);
+    setLanguage(draft.language);
+    setTagsText(draft.tagsText);
+    setDescription(draft.description);
+    setCode(draft.code);
+    setFavorite(draft.favorite);
+    setDraftRestoredFrom(draft.savedAt);
+  }, [draftKey, initialState]);
+
+  // 草稿自动保存（debounce 2s）
+  useEffect(() => {
+    const current = { title, language, tagsText, description, code, favorite };
+    if (statesEqual(current, initialState)) {
+      clearDraft(draftKey);
       return;
     }
-    setError(null);
-    setSubmitting(true);
-    try {
-      const tags = tagsText
-        .split(/[,，]/)
-        .map((t) => t.trim())
-        .filter(Boolean);
-      await onSubmit({
-        title: title.trim(),
-        language: language || 'text',
-        code,
-        description: description.trim(),
-        tags,
-        favorite,
-      });
-    } catch (err: any) {
-      setError(err?.message || '保存失败');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    const timer = setTimeout(() => {
+      saveDraft(draftKey, current);
+    }, DRAFT_SAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [title, language, tagsText, description, code, favorite, initialState, draftKey]);
+
+  const handleSubmit = useCallback(
+    async (e?: React.FormEvent | Event) => {
+      e?.preventDefault?.();
+      if (!title.trim()) {
+        setError('请输入标题');
+        return;
+      }
+      if (!code) {
+        setError('代码不能为空');
+        return;
+      }
+      setError(null);
+      setSubmitting(true);
+      try {
+        const tags = tagsText
+          .split(/[,，]/)
+          .map((t) => t.trim())
+          .filter(Boolean);
+        await onSubmit({
+          title: title.trim(),
+          language: language || 'text',
+          code,
+          description: description.trim(),
+          tags,
+          favorite,
+        });
+        clearDraft(draftKey);
+      } catch (err) {
+        setError((err as Error)?.message || '保存失败');
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [title, code, language, description, tagsText, favorite, onSubmit, draftKey],
+  );
+
+  const handleCancel = useCallback(() => {
+    onCancel();
+  }, [onCancel]);
+
+  useFocusTrap(containerRef, true);
+  useEscClose(handleCancel, !submitting);
+
+  const submitOnSaveShortcut = useCallback(() => {
+    void handleSubmit();
+  }, [handleSubmit]);
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label={initial ? '编辑脚本' : '新建脚本'}
+    >
       <form
+        ref={containerRef}
         onSubmit={handleSubmit}
         className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden"
       >
@@ -103,15 +301,38 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
           </h2>
           <button
             type="button"
-            onClick={onCancel}
+            onClick={handleCancel}
             className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            aria-label="关闭"
+            aria-label="关闭 (Esc)"
           >
             <X size={16} />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+          {draftRestoredFrom !== null && (
+            <div className="text-xs px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+              已恢复 {new Date(draftRestoredFrom).toLocaleString()} 的未保存草稿
+              <button
+                type="button"
+                onClick={() => {
+                  const s = buildInitialState(initial);
+                  setTitle(s.title);
+                  setLanguage(s.language);
+                  setTagsText(s.tagsText);
+                  setDescription(s.description);
+                  setCode(s.code);
+                  setFavorite(s.favorite);
+                  setDraftRestoredFrom(null);
+                  clearDraft(draftKey);
+                }}
+                className="ml-2 underline hover:no-underline"
+              >
+                丢弃草稿
+              </button>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
@@ -124,6 +345,7 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/60"
                 placeholder="例: 清理 docker 镜像"
                 maxLength={200}
+                autoFocus
               />
             </div>
 
@@ -178,14 +400,16 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
           <div>
             <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
               代码 <span className="text-red-500">*</span>
+              <span className="ml-2 text-slate-400 dark:text-slate-500 font-normal">
+                (⌘/Ctrl+S 保存)
+              </span>
             </label>
-            <textarea
+            <MonacoCodeEditor
               value={code}
-              onChange={(e) => setCode(e.target.value)}
-              rows={14}
-              spellCheck={false}
-              className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/60 font-mono text-sm leading-relaxed resize-y"
-              placeholder="在此粘贴代码..."
+              onChange={setCode}
+              language={language}
+              height={380}
+              onSave={submitOnSaveShortcut}
             />
           </div>
 
@@ -199,15 +423,13 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
             标记为收藏
           </label>
 
-          {error && (
-            <div className="text-sm text-red-600 dark:text-red-400">{error}</div>
-          )}
+          {error && <div className="text-sm text-red-600 dark:text-red-400">{error}</div>}
         </div>
 
         <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-end gap-2">
           <button
             type="button"
-            onClick={onCancel}
+            onClick={handleCancel}
             className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             取消

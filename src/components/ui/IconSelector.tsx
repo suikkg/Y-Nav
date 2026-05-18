@@ -9,28 +9,109 @@ interface IconSelectorProps {
 
 // 常用图标列表，可以根据需要扩展
 const commonIcons = [
-  'Star', 'Heart', 'Bookmark', 'Flag', 'Tag', 'Hash',
-  'Home', 'User', 'Users', 'Settings', 'Bell', 'Mail',
-  'Calendar', 'Clock', 'MapPin', 'Phone', 'Camera', 'Image',
-  'Folder', 'File', 'Archive', 'Trash2', 'Download', 'Upload',
-  'Search', 'Filter', 'Menu', 'MoreVertical', 'ChevronDown', 'ChevronUp',
-  'Plus', 'Minus', 'X', 'Check', 'AlertCircle', 'Info',
-  'Edit', 'Copy', 'Share', 'Link', 'ExternalLink', 'Lock',
-  'Code', 'Terminal', 'Database', 'Server', 'Cloud', 'Wifi',
-  'ShoppingCart', 'CreditCard', 'Package', 'Truck', 'Store',
-  'Music', 'Play', 'Pause', 'Volume2', 'Headphones', 'Mic',
-  'Book', 'BookOpen', 'FileText', 'PenTool', 'Highlighter', 'Type',
-  'Layout', 'Grid', 'List', 'Columns', 'Sidebar', 'Layers',
-  'Circle', 'Square', 'Triangle', 'Hexagon', 'Zap', 'Target',
-  'Rocket', 'Plane', 'Car', 'Bike', 'Ship', 'Train',
-  'Moon', 'Sun', 'CloudRain', 'CloudSnow', 'Wind', 'Thermometer',
-  'Github', 'Gitlab', 'Chrome', 'Firefox', 'Safari', 'Edge',
-  'MessageSquare', 'MessageCircle', 'Send', 'AtSign', 'Percent'
+  'Star',
+  'Heart',
+  'Bookmark',
+  'Flag',
+  'Tag',
+  'Hash',
+  'Home',
+  'User',
+  'Users',
+  'Settings',
+  'Bell',
+  'Mail',
+  'Calendar',
+  'Clock',
+  'MapPin',
+  'Phone',
+  'Camera',
+  'Image',
+  'Folder',
+  'File',
+  'Archive',
+  'Trash2',
+  'Download',
+  'Upload',
+  'Search',
+  'Filter',
+  'Menu',
+  'MoreVertical',
+  'ChevronDown',
+  'ChevronUp',
+  'Plus',
+  'Minus',
+  'X',
+  'Check',
+  'AlertCircle',
+  'Info',
+  'Edit',
+  'Copy',
+  'Share',
+  'Link',
+  'ExternalLink',
+  'Lock',
+  'Code',
+  'Terminal',
+  'Database',
+  'Server',
+  'Cloud',
+  'Wifi',
+  'ShoppingCart',
+  'CreditCard',
+  'Package',
+  'Truck',
+  'Store',
+  'Music',
+  'Play',
+  'Pause',
+  'Volume2',
+  'Headphones',
+  'Mic',
+  'Book',
+  'BookOpen',
+  'FileText',
+  'PenTool',
+  'Highlighter',
+  'Type',
+  'Layout',
+  'Grid',
+  'List',
+  'Columns',
+  'Sidebar',
+  'Layers',
+  'Circle',
+  'Square',
+  'Triangle',
+  'Hexagon',
+  'Zap',
+  'Target',
+  'Rocket',
+  'Plane',
+  'Car',
+  'Bike',
+  'Ship',
+  'Train',
+  'Moon',
+  'Sun',
+  'CloudRain',
+  'CloudSnow',
+  'Wind',
+  'Thermometer',
+  'Github',
+  'Gitlab',
+  'Chrome',
+  'Firefox',
+  'Safari',
+  'Edge',
+  'MessageSquare',
+  'MessageCircle',
+  'Send',
+  'AtSign',
+  'Percent',
 ];
 
-const IconSelector: React.FC<IconSelectorProps> = ({ 
-  onSelectIcon
-}) => {
+const IconSelector: React.FC<IconSelectorProps> = ({ onSelectIcon }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIcon, setSelectedIcon] = useState('Folder');
   const [customIconName, setCustomIconName] = useState('');
@@ -42,36 +123,36 @@ const IconSelector: React.FC<IconSelectorProps> = ({
   };
 
   // 过滤图标
-  const filteredIcons = commonIcons.filter(icon => 
-    icon.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredIcons = commonIcons.filter((icon) =>
+    icon.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   // 将 kebab-case 转换为 PascalCase
   const kebabToPascal = (kebabName: string): string => {
     return kebabName
       .split('-')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join('');
   };
 
   // 验证图标名称是否有效
   const validateIconName = (iconName: string): boolean => {
     if (!iconName.trim()) return false;
-    
+
     // 检查是否是常用图标列表中的图标
     if (commonIcons.includes(iconName)) return true;
-    
+
     // 检查是否是 Lucide 图标库中的图标
     try {
       // 首先尝试直接匹配
       if (iconName in LucideIcons) return true;
-      
+
       // 如果包含连字符，尝试转换为 PascalCase
       if (iconName.includes('-')) {
         const pascalName = kebabToPascal(iconName);
         return pascalName in LucideIcons;
       }
-      
+
       // 尝试首字母大写
       const capitalizedName = iconName.charAt(0).toUpperCase() + iconName.slice(1);
       return capitalizedName in LucideIcons;
@@ -88,7 +169,7 @@ const IconSelector: React.FC<IconSelectorProps> = ({
 
   const handleCustomIconChange = (iconName: string) => {
     setCustomIconName(iconName);
-    
+
     if (iconName.trim()) {
       const isValid = validateIconName(iconName);
       setIsValidIcon(isValid);
@@ -134,9 +215,9 @@ const IconSelector: React.FC<IconSelectorProps> = ({
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-600 dark:text-slate-400">输入图标名称:</span>
-            <a 
-              href="https://lucide.dev/icons/" 
-              target="_blank" 
+            <a
+              href="https://lucide.dev/icons/"
+              target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline"
             >
@@ -151,8 +232,8 @@ const IconSelector: React.FC<IconSelectorProps> = ({
               value={customIconName}
               onChange={(e) => handleCustomIconChange(e.target.value)}
               className={`w-full px-3 py-2 rounded-lg border ${
-                customIconName && !isValidIcon 
-                  ? 'border-red-300 dark:border-red-700' 
+                customIconName && !isValidIcon
+                  ? 'border-red-300 dark:border-red-700'
                   : 'border-slate-300 dark:border-slate-600'
               } dark:bg-slate-700 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none`}
             />
@@ -200,13 +281,13 @@ const IconSelector: React.FC<IconSelectorProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2">
-            {filteredIcons.map(iconName => (
+            {filteredIcons.map((iconName) => (
               <button
                 key={iconName}
                 onClick={() => handleSelect(iconName)}
                 className={`p-3 rounded-lg flex flex-col items-center justify-center gap-1 transition-all ${
-                  selectedIcon === iconName 
-                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 ring-2 ring-blue-500' 
+                  selectedIcon === iconName
+                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 ring-2 ring-blue-500'
                     : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400'
                 }`}
                 title={iconName}

@@ -84,7 +84,7 @@ name: Sync Upstream
 
 on:
   schedule:
-    - cron: "0 3 * * *" # 每天 03:00 UTC
+    - cron: '0 3 * * *' # 每天 03:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -200,12 +200,15 @@ id = "你的 Namespace ID"  # ← 替换这里
 ## 🗂️ 私有脚本库 (`/scripts`)
 
 主站之外内置了一个独立的私有脚本片段库，访问路径 `/scripts`。
+2026-05 大版本重构后支持: 全文搜索 / 软删除 + 回收站 / 版本历史 / 公开分享 / 批量操作 / Monaco 编辑器 / 自动草稿。详见 [CHANGELOG.md](./CHANGELOG.md)。
 
-| 项目     | 说明                                                              |
-| -------- | ----------------------------------------------------------------- |
-| 路由     | `https://your-domain/scripts`                                     |
-| 数据存储 | Cloudflare D1                                                     |
-| 鉴权     | 密码登录 + HMAC 签名的 HttpOnly Cookie 会话                       |
+| 项目     | 说明                                                                      |
+| -------- | ------------------------------------------------------------------------- |
+| 路由     | `https://your-domain/scripts`                                             |
+| 公开分享 | `https://your-domain/share/:token` (只读，无需登录)                       |
+| 数据存储 | Cloudflare D1 (FTS5 trigram tokenizer)                                    |
+| 鉴权     | PBKDF2-SHA256 (200k 迭代) + HMAC 签名的 HttpOnly Cookie 会话              |
+| 限流     | 5 次登录失败 → 锁定 15 分钟 (429 + Retry-After)                           |
 | 后端     | 复用现有 Worker 入口，路由 `/api/snippets/*` 由 `worker/snippets.ts` 处理 |
 
 ### Cloudflare 后台必须的配置 (Workers 部署)
@@ -213,20 +216,43 @@ id = "你的 Namespace ID"  # ← 替换这里
 > 站点通过 `wrangler deploy` 部署为 Cloudflare Worker。**绑定/密钥需配置在 Worker 上，不在 Pages 上。**
 
 1. **创建并绑定 D1 数据库**
+
    ```bash
    wrangler d1 create y-nav-snippets
    # 把返回的 database_id 填入 wrangler.toml 的 [[d1_databases]] 段
-   wrangler d1 execute y-nav-snippets --remote --file=migrations/0001_create_snippets.sql
+
+   # 一次性执行所有迁移 (顺序敏感):
+   for f in migrations/*.sql; do
+     wrangler d1 execute y-nav-snippets --remote --file="$f"
+   done
+   # 包含: 0001 主表 / 0002 鉴权设置 / 0003 登录限流
+   #       0004 FTS5 + 软删除 + 版本历史 / 0005 公开分享
    ```
+
    绑定 variable name **必须是 `SNIPPETS_DB`** (与 `wrangler.toml` 中的 `binding` 一致)。
+   重复执行 `0004` / `0005` 时若提示 "duplicate column" 可忽略 (SQLite 不支持 ADD COLUMN IF NOT EXISTS)。
 
 2. **设置 Secrets** (CLI 推荐；也可在 Dashboard → Workers → 你的 worker → Settings → Variables 里加)
+
    ```bash
-   wrangler secret put SNIPPETS_PASSWORD_HASH   # 粘贴 sha256(密码) hex
-   wrangler secret put SNIPPETS_SESSION_SECRET  # 粘贴随机串
+   npm run hash:password              # 在终端打印 pbkdf2$... 字符串
+   wrangler secret put SNIPPETS_PASSWORD_HASH    # 粘贴上一步输出
+   wrangler secret put SNIPPETS_SESSION_SECRET   # 粘贴 openssl rand -base64 48 输出
    ```
-   - `SNIPPETS_PASSWORD_HASH`: `printf '%s' '你的密码' | shasum -a 256`
-   - `SNIPPETS_SESSION_SECRET`: `openssl rand -base64 48`
+
+   - `SNIPPETS_PASSWORD_HASH`: PBKDF2 格式 (推荐) 或旧 SHA-256 hex (仍兼容，登录后自动升级到 PBKDF2)
+   - `SNIPPETS_SESSION_SECRET`: 任意 ≥32 字节随机串，用于 HMAC 签名会话 Cookie
+
+3. **轮换脚本库密码**
+
+   更新 secret 后必须清空 D1 中的"已升级"哈希，否则旧密码继续生效：
+
+   ```bash
+   npm run hash:password                              # 生成新哈希
+   wrangler secret put SNIPPETS_PASSWORD_HASH
+   wrangler d1 execute snippets-db --remote \
+     --command="DELETE FROM auth_settings WHERE k='password_hash'"
+   ```
 
 未配置时 `/api/snippets/auth/login` 会返回 500 提示「服务端未配置」。
 
@@ -270,6 +296,13 @@ npm run dev
 
 # 启动 Workers 模拟环境（需要先 wrangler login）
 npm run dev:workers
+
+# 质量检查
+npm run typecheck    # tsc 前端 + Worker
+npm run lint         # ESLint
+npm run format       # Prettier 一键格式化
+npm test             # Vitest 单元测试 (jsdom + testing-library)
+npm run test:coverage
 ```
 
 本地服务运行在 `http://localhost:3000`

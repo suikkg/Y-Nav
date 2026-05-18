@@ -5,25 +5,39 @@ import { DialogProvider } from './components/ui/DialogProvider';
 import './index.css';
 
 const ScriptsVault = lazy(() => import('./components/scripts/ScriptsVault'));
+const PublicSnippetView = lazy(() => import('./components/scripts/PublicSnippetView'));
 
 const SCRIPTS_PATH_PREFIX = '/scripts';
+const SHARE_PATH_PREFIX = '/share/';
 
-function isScriptsRoute(): boolean {
-  if (typeof window === 'undefined') return false;
+type Route =
+  | { kind: 'home' }
+  | { kind: 'scripts' }
+  | { kind: 'share'; token: string };
+
+function detectRoute(): Route {
+  if (typeof window === 'undefined') return { kind: 'home' };
   const p = window.location.pathname;
-  return p === SCRIPTS_PATH_PREFIX || p.startsWith(SCRIPTS_PATH_PREFIX + '/');
+  if (p === SCRIPTS_PATH_PREFIX || p.startsWith(SCRIPTS_PATH_PREFIX + '/')) {
+    return { kind: 'scripts' };
+  }
+  if (p.startsWith(SHARE_PATH_PREFIX)) {
+    const token = p.slice(SHARE_PATH_PREFIX.length).replace(/\/+$/, '');
+    if (token) return { kind: 'share', token };
+  }
+  return { kind: 'home' };
 }
 
 const Router: React.FC = () => {
-  const [onScripts, setOnScripts] = useState<boolean>(() => isScriptsRoute());
+  const [route, setRoute] = useState<Route>(() => detectRoute());
 
   useEffect(() => {
-    const handler = () => setOnScripts(isScriptsRoute());
+    const handler = () => setRoute(detectRoute());
     window.addEventListener('popstate', handler);
     return () => window.removeEventListener('popstate', handler);
   }, []);
 
-  if (onScripts) {
+  if (route.kind === 'scripts') {
     return (
       <Suspense
         fallback={
@@ -35,9 +49,23 @@ const Router: React.FC = () => {
         <ScriptsVault
           onExit={() => {
             window.history.pushState({}, '', '/');
-            setOnScripts(false);
+            setRoute({ kind: 'home' });
           }}
         />
+      </Suspense>
+    );
+  }
+
+  if (route.kind === 'share') {
+    return (
+      <Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-400">
+            加载中...
+          </div>
+        }
+      >
+        <PublicSnippetView token={route.token} />
       </Suspense>
     );
   }
@@ -47,7 +75,7 @@ const Router: React.FC = () => {
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
-  throw new Error("Could not find root element to mount to");
+  throw new Error('Could not find root element to mount to');
 }
 
 const root = ReactDOM.createRoot(rootElement);
@@ -56,5 +84,5 @@ root.render(
     <DialogProvider>
       <Router />
     </DialogProvider>
-  </React.StrictMode>
+  </React.StrictMode>,
 );

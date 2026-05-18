@@ -14,12 +14,15 @@ export default defineConfig(({ mode }) => {
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      '__APP_VERSION__': JSON.stringify(process.env.npm_package_version)
+      __APP_VERSION__: JSON.stringify(process.env.npm_package_version),
     },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
-      }
+      },
+    },
+    worker: {
+      format: 'es',
     },
     build: {
       rollupOptions: {
@@ -28,20 +31,16 @@ export default defineConfig(({ mode }) => {
             // React core libraries
             'vendor-react': ['react', 'react-dom'],
             // Drag and drop libraries
-            'vendor-dnd': [
-              '@dnd-kit/core',
-              '@dnd-kit/sortable',
-              '@dnd-kit/utilities'
-            ],
+            'vendor-dnd': ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
             // Icon library
             'vendor-icons': ['lucide-react'],
-            // AI library
-            'vendor-ai': ['@google/genai'],
-          }
-        }
+            // 注意：@google/genai 改为动态 import，让 Rollup 按需拆分。
+            // 也不再硬拆 highlight.js，各语言包通过动态 import 形成独立 chunk。
+          },
+        },
       },
       // Increase chunk size warning limit to reduce warnings
-      chunkSizeWarningLimit: 1000
-    }
+      chunkSizeWarningLimit: 1000,
+    },
   };
 });

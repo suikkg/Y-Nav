@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Copy, Check } from 'lucide-react';
-import { highlightCode } from './highlight';
+import { highlightCodeAsync } from './highlight';
+import CopyWithVarsButton from './CopyWithVarsButton';
 import './code-theme.css';
 
 interface CodeBlockProps {
@@ -11,6 +12,15 @@ interface CodeBlockProps {
   showLineNumbers?: boolean;
 }
 
+function escapePlain(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 const CodeBlock: React.FC<CodeBlockProps> = ({
   code,
   language,
@@ -19,11 +29,32 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const { html: highlightedHtml, language: resolvedLang } = useMemo(
-    () => highlightCode(code, language),
-    [code, language]
+  const [highlightedHtml, setHighlightedHtml] = useState<string>(() => escapePlain(code));
+  const [resolvedLang, setResolvedLang] = useState<string>(() =>
+    (language || 'text').toLowerCase().trim(),
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    // 立即显示未高亮文本作为占位，避免大代码渲染前白屏
+    setHighlightedHtml(escapePlain(code));
+    setResolvedLang((language || 'text').toLowerCase().trim());
+
+    highlightCodeAsync(code, language)
+      .then((result) => {
+        if (!cancelled) {
+          setHighlightedHtml(result.html);
+          setResolvedLang(result.language);
+        }
+      })
+      .catch(() => {
+        // 已经显示了 escaped 文本，无需额外处理
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [code, language]);
 
   const highlightedLines = useMemo(() => {
     if (!showLineNumbers) return null;
@@ -38,7 +69,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
       await navigator.clipboard.writeText(code);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch (err) {
+    } catch {
       setError('复制失败，请手动选择');
       setTimeout(() => setError(null), 2000);
     }
@@ -50,24 +81,27 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
         <div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
           {resolvedLang || 'text'}
         </div>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-700/60 transition-colors"
-          aria-label="复制代码"
-        >
-          {copied ? (
-            <>
-              <Check size={14} className="text-emerald-500" />
-              已复制
-            </>
-          ) : (
-            <>
-              <Copy size={14} />
-              复制
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-1">
+          <CopyWithVarsButton code={code} />
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-700/60 transition-colors"
+            aria-label="复制代码"
+          >
+            {copied ? (
+              <>
+                <Check size={14} className="text-emerald-500" />
+                已复制
+              </>
+            ) : (
+              <>
+                <Copy size={14} />
+                复制
+              </>
+            )}
+          </button>
+        </div>
       </div>
       {error && (
         <div className="px-4 py-2 text-xs text-red-600 dark:text-red-400 border-b border-slate-200/80 dark:border-slate-700/60">

@@ -31,72 +31,72 @@ export const GITHUB_REPO_URL = 'https://github.com/yml2213/Y-Nav.git';
 
 // 获取浏览器信息
 const getBrowserInfo = (): string => {
-    const ua = navigator.userAgent;
-    if (ua.includes('Edg/')) return 'Edge';
-    if (ua.includes('Chrome/')) return 'Chrome';
-    if (ua.includes('Firefox/')) return 'Firefox';
-    if (ua.includes('Safari/') && !ua.includes('Chrome')) return 'Safari';
-    if (ua.includes('OPR/') || ua.includes('Opera/')) return 'Opera';
-    return 'Unknown';
+  const ua = navigator.userAgent;
+  if (ua.includes('Edg/')) return 'Edge';
+  if (ua.includes('Chrome/')) return 'Chrome';
+  if (ua.includes('Firefox/')) return 'Firefox';
+  if (ua.includes('Safari/') && !ua.includes('Chrome')) return 'Safari';
+  if (ua.includes('OPR/') || ua.includes('Opera/')) return 'Opera';
+  return 'Unknown';
 };
 
 // 获取操作系统信息
 const getOSInfo = (): string => {
-    const ua = navigator.userAgent;
-    if (ua.includes('Win')) return 'Windows';
-    if (ua.includes('Mac')) return 'macOS';
-    if (ua.includes('Linux')) return 'Linux';
-    if (ua.includes('Android')) return 'Android';
-    if (ua.includes('iOS') || ua.includes('iPhone') || ua.includes('iPad')) return 'iOS';
-    return 'Unknown';
+  const ua = navigator.userAgent;
+  if (ua.includes('Win')) return 'Windows';
+  if (ua.includes('Mac')) return 'macOS';
+  if (ua.includes('Linux')) return 'Linux';
+  if (ua.includes('Android')) return 'Android';
+  if (ua.includes('iOS') || ua.includes('iPhone') || ua.includes('iPad')) return 'iOS';
+  return 'Unknown';
 };
 
 // 设备信息接口
 export interface DeviceInfo {
-    id: string;
-    browser: string;
-    os: string;
-    createdAt: number;
+  id: string;
+  browser: string;
+  os: string;
+  createdAt: number;
 }
 
 // 生成或获取设备唯一ID
 export const getDeviceId = (): string => {
-    let deviceId = localStorage.getItem(DEVICE_ID_KEY);
-    if (!deviceId) {
-        deviceId = `device_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-        localStorage.setItem(DEVICE_ID_KEY, deviceId);
+  let deviceId = localStorage.getItem(DEVICE_ID_KEY);
+  if (!deviceId) {
+    deviceId = `device_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    localStorage.setItem(DEVICE_ID_KEY, deviceId);
 
-        // 保存设备信息
-        const deviceInfo: DeviceInfo = {
-            id: deviceId,
-            browser: getBrowserInfo(),
-            os: getOSInfo(),
-            createdAt: Date.now()
-        };
-        localStorage.setItem(DEVICE_INFO_KEY, JSON.stringify(deviceInfo));
-    } else {
-        // 如果是旧版本的设备ID,补充设备信息
-        const existingInfo = localStorage.getItem(DEVICE_INFO_KEY);
-        if (!existingInfo) {
-            const deviceInfo: DeviceInfo = {
-                id: deviceId,
-                browser: getBrowserInfo(),
-                os: getOSInfo(),
-                createdAt: Date.now()
-            };
-            localStorage.setItem(DEVICE_INFO_KEY, JSON.stringify(deviceInfo));
-        }
+    // 保存设备信息
+    const deviceInfo: DeviceInfo = {
+      id: deviceId,
+      browser: getBrowserInfo(),
+      os: getOSInfo(),
+      createdAt: Date.now(),
+    };
+    localStorage.setItem(DEVICE_INFO_KEY, JSON.stringify(deviceInfo));
+  } else {
+    // 如果是旧版本的设备ID,补充设备信息
+    const existingInfo = localStorage.getItem(DEVICE_INFO_KEY);
+    if (!existingInfo) {
+      const deviceInfo: DeviceInfo = {
+        id: deviceId,
+        browser: getBrowserInfo(),
+        os: getOSInfo(),
+        createdAt: Date.now(),
+      };
+      localStorage.setItem(DEVICE_INFO_KEY, JSON.stringify(deviceInfo));
     }
-    return deviceId;
+  }
+  return deviceId;
 };
 
 // 获取设备信息
 export const getDeviceInfo = (): DeviceInfo | null => {
-    const infoStr = localStorage.getItem(DEVICE_INFO_KEY);
-    if (!infoStr) return null;
-    try {
-        return JSON.parse(infoStr);
-    } catch {
-        return null;
-    }
+  const infoStr = localStorage.getItem(DEVICE_INFO_KEY);
+  if (!infoStr) return null;
+  try {
+    return JSON.parse(infoStr);
+  } catch {
+    return null;
+  }
 };

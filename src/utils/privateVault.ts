@@ -36,19 +36,19 @@ const deriveKey = async (password: string, salt: Uint8Array) => {
     encoder.encode(password),
     'PBKDF2',
     false,
-    ['deriveKey']
+    ['deriveKey'],
   );
   return crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
       salt,
       iterations: PBKDF2_ITERATIONS,
-      hash: 'SHA-256'
+      hash: 'SHA-256',
     },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
     false,
-    ['encrypt', 'decrypt']
+    ['encrypt', 'decrypt'],
   );
 };
 
@@ -61,7 +61,10 @@ export const encryptPrivateVault = async (password: string, payload: PrivateVaul
   return `${VAULT_VERSION}.${toBase64(salt)}.${toBase64(iv)}.${toBase64(encrypted)}`;
 };
 
-export const decryptPrivateVault = async (password: string, cipherText: string): Promise<PrivateVaultPayload> => {
+export const decryptPrivateVault = async (
+  password: string,
+  cipherText: string,
+): Promise<PrivateVaultPayload> => {
   const [version, saltB64, ivB64, dataB64] = cipherText.split('.');
   if (version !== VAULT_VERSION || !saltB64 || !ivB64 || !dataB64) {
     throw new Error('Invalid vault payload');

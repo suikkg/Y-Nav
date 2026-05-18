@@ -26,8 +26,14 @@ id = "46c6f5a6db604c2e8f0831a5910e6c35"
 # 启用前请先:
 #   1) wrangler d1 create y-nav-snippets
 #      记下返回的 database_id
-#   2) wrangler d1 execute y-nav-snippets --remote \
-#        --file=migrations/0001_create_snippets.sql
+#   2) 一次性执行所有迁移 (顺序敏感):
+#        for f in migrations/*.sql; do
+#          wrangler d1 execute y-nav-snippets --remote --file="$f"
+#        done
+#      包含: 0001 主表 / 0002 鉴权设置 / 0003 登录限流
+#            0004 FTS5 + 软删除 + 版本历史
+#            0005 公开分享 token
+#      重复执行迁移 0004/0005 时若提示 "duplicate column" 可忽略 (SQLite 不支持 ADD COLUMN IF NOT EXISTS)
 #   3) 取消下方三行注释，把 database_id 填上
 #
 # 在 D1 绑定生效之前 /scripts 页面会显示 "服务端未配置 SNIPPETS_DB"。
@@ -43,8 +49,15 @@ id = "46c6f5a6db604c2e8f0831a5910e6c35"
 # SYNC_PASSWORD = ""  # 同步密码，建议在 Dashboard 中设置而非此处
 
 # Secrets (必须通过 Dashboard 或 `wrangler secret put` 设置，不要写在此文件):
-#   SNIPPETS_PASSWORD_HASH   - 脚本库登录密码的 sha256(hex)
-#                              生成: printf '%s' '你的密码' | shasum -a 256
+#   SNIPPETS_PASSWORD_HASH   - 脚本库登录密码哈希
+#                              推荐 PBKDF2 格式 (脚本生成):
+#                                npm run hash:password
+#                                # 拷贝输出的 pbkdf2$200000$.../... 字符串
+#                                wrangler secret put SNIPPETS_PASSWORD_HASH
+#                              旧 SHA-256 hex 仍兼容; 旧密码登录成功后会自动升级写入 D1.
+#                              如需轮换密码: 更新此 secret 后执行
+#                                wrangler d1 execute snippets-db --remote \
+#                                  --command="DELETE FROM auth_settings WHERE k='password_hash'"
 #   SNIPPETS_SESSION_SECRET  - 任意 >=32 字节随机串，用于 HMAC 签名会话 Cookie
 #                              生成: openssl rand -base64 48
 
@@ -61,8 +74,9 @@ id = "46c6f5a6db604c2e8f0831a5910e6c35"
 # 3. 将返回的 id 填入上方 kv_namespaces.id
 # 4. wrangler d1 create y-nav-snippets
 # 5. 将返回的 database_id 填入上方 d1_databases.database_id
-# 6. wrangler d1 execute y-nav-snippets --remote --file=migrations/0001_create_snippets.sql
-# 7. wrangler secret put SNIPPETS_PASSWORD_HASH
-# 8. wrangler secret put SNIPPETS_SESSION_SECRET
+# 6. for f in migrations/*.sql; do wrangler d1 execute y-nav-snippets --remote --file="$f"; done
+# 7. npm run hash:password  # 输出 pbkdf2$... 字符串
+#    wrangler secret put SNIPPETS_PASSWORD_HASH  # 粘贴上一步输出
+# 8. wrangler secret put SNIPPETS_SESSION_SECRET  # 粘贴 openssl rand -base64 48 输出
 # 9. wrangler deploy
 # ============================================
