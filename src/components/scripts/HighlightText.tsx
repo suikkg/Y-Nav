@@ -19,11 +19,7 @@ function escapeRegExp(s: string): string {
 const HighlightText: React.FC<HighlightTextProps> = ({ text, query, className }) => {
   const segments = useMemo(() => {
     if (!query || !text) return null;
-    const tokens = query
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .map(escapeRegExp);
+    const tokens = query.trim().split(/\s+/).filter(Boolean).map(escapeRegExp);
     if (tokens.length === 0) return null;
     const re = new RegExp(`(${tokens.join('|')})`, 'gi');
     const parts = text.split(re);

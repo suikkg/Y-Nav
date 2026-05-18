@@ -78,9 +78,7 @@ const SnippetShareModal: React.FC<SnippetShareModalProps> = ({ snippet, onClose,
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800/60">
           <div className="flex items-center gap-2">
             <Share2 size={16} className="text-accent" />
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              公开分享
-            </h2>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">公开分享</h2>
           </div>
           <button
             type="button"

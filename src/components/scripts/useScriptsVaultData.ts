@@ -84,10 +84,7 @@ interface ImportProgress {
   failed: number;
 }
 
-export type EditorState =
-  | { mode: 'create' }
-  | { mode: 'edit'; snippet: ScriptSnippet }
-  | null;
+export type EditorState = { mode: 'create' } | { mode: 'edit'; snippet: ScriptSnippet } | null;
 
 /**
  * 集中持有 ScriptsVault 的所有数据与副作用。

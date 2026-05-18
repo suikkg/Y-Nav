@@ -10,10 +10,7 @@ const PublicSnippetView = lazy(() => import('./components/scripts/PublicSnippetV
 const SCRIPTS_PATH_PREFIX = '/scripts';
 const SHARE_PATH_PREFIX = '/share/';
 
-type Route =
-  | { kind: 'home' }
-  | { kind: 'scripts' }
-  | { kind: 'share'; token: string };
+type Route = { kind: 'home' } | { kind: 'scripts' } | { kind: 'share'; token: string };
 
 function detectRoute(): Route {
   if (typeof window === 'undefined') return { kind: 'home' };

@@ -124,7 +124,8 @@ const ScriptsLogin: React.FC<ScriptsLoginProps> = ({ onLoggedIn, onBack }) => {
 
             {isLocked && (
               <div className="text-xs px-3 py-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300">
-                登录尝试过多，请在 <span className="font-semibold">{formatRemaining(remainingSec)}</span> 后重试。
+                登录尝试过多，请在{' '}
+                <span className="font-semibold">{formatRemaining(remainingSec)}</span> 后重试。
               </div>
             )}
 

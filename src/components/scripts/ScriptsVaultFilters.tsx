@@ -53,10 +53,7 @@ const ScriptsVaultFilters: React.FC<Props> = ({ data }) => {
       <div className="flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row gap-2">
           <div className="relative flex-1">
-            <Search
-              size={14}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            />
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}

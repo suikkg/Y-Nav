@@ -162,9 +162,7 @@ const CopyWithVarsButton: React.FC<CopyWithVarsButtonProps> = ({ code }) => {
                     ref={idx === 0 ? firstInputRef : undefined}
                     type="text"
                     value={values[p.name] ?? ''}
-                    onChange={(e) =>
-                      setValues((prev) => ({ ...prev, [p.name]: e.target.value }))
-                    }
+                    onChange={(e) => setValues((prev) => ({ ...prev, [p.name]: e.target.value }))}
                     placeholder={`留空保留 "${p.name}"`}
                     className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/60"
                   />
