@@ -35,7 +35,7 @@ export default defineConfig(({ mode }) => {
             // Icon library
             'vendor-icons': ['lucide-react'],
             // 注意：@google/genai 改为动态 import，让 Rollup 按需拆分。
-            // 也不再硬拆 highlight.js，各语言包通过动态 import 形成独立 chunk。
+            // shiki 的核心 / 引擎 / 语法包 / 主题均通过动态 import 形成独立 chunk。
           },
         },
       },

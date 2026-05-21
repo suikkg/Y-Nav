@@ -1,42 +1,55 @@
-import hljs from 'highlight.js/lib/core';
+/**
+ * Shiki 语法高亮（VS Code 同款 TextMate 引擎，JS Regex 版，免 WASM）
+ *
+ * 设计要点：
+ *   - 用 `shiki/core` + `shiki/engine/javascript` 自建 highlighter，按需 import 语法包
+ *   - 双主题 vitesse-light / vitesse-dark，`defaultColor: false` 让 shiki 写入
+ *     `--shiki-light` / `--shiki-dark` CSS 变量；亮/暗切换由 `code-theme.css`
+ *     里的 `html.dark` 选择器控制（与项目的 dark mode 策略保持一致）
+ *   - 输出剥离最外层 `<pre><code>`，仅返回 `<span class="line">…</span>` 链，
+ *     交给 `CodeBlock.tsx` 用自家容器渲染（保留圆角 / 滚动 / 最大高度等样式）
+ */
+
+import type { HighlighterCore } from 'shiki/core';
+
+const THEME_LIGHT = 'vitesse-light';
+const THEME_DARK = 'vitesse-dark';
 
 /**
- * 各语言按需动态 import。
- * 首屏只加载 hljs 核心（~10KB），用户打开某条脚本时再拉对应语言的语法包。
+ * 语言 → 动态 import loader。Shiki 把每种语言切成独立 chunk，
+ * 首屏只加载核心 + 引擎，使用时再拉对应语法。
  */
-const loaders: Record<string, () => Promise<{ default: unknown }>> = {
-  bash: () => import('highlight.js/lib/languages/bash'),
-  shell: () => import('highlight.js/lib/languages/shell'),
-  python: () => import('highlight.js/lib/languages/python'),
-  javascript: () => import('highlight.js/lib/languages/javascript'),
-  typescript: () => import('highlight.js/lib/languages/typescript'),
-  go: () => import('highlight.js/lib/languages/go'),
-  rust: () => import('highlight.js/lib/languages/rust'),
-  java: () => import('highlight.js/lib/languages/java'),
-  c: () => import('highlight.js/lib/languages/c'),
-  cpp: () => import('highlight.js/lib/languages/cpp'),
-  csharp: () => import('highlight.js/lib/languages/csharp'),
-  php: () => import('highlight.js/lib/languages/php'),
-  ruby: () => import('highlight.js/lib/languages/ruby'),
-  sql: () => import('highlight.js/lib/languages/sql'),
-  json: () => import('highlight.js/lib/languages/json'),
-  yaml: () => import('highlight.js/lib/languages/yaml'),
-  ini: () => import('highlight.js/lib/languages/ini'),
-  xml: () => import('highlight.js/lib/languages/xml'),
-  css: () => import('highlight.js/lib/languages/css'),
-  markdown: () => import('highlight.js/lib/languages/markdown'),
-  dockerfile: () => import('highlight.js/lib/languages/dockerfile'),
-  nginx: () => import('highlight.js/lib/languages/nginx'),
-  lua: () => import('highlight.js/lib/languages/lua'),
-  kotlin: () => import('highlight.js/lib/languages/kotlin'),
-  swift: () => import('highlight.js/lib/languages/swift'),
-  powershell: () => import('highlight.js/lib/languages/powershell'),
-  plaintext: () => import('highlight.js/lib/languages/plaintext'),
+const loaders: Record<string, () => Promise<unknown>> = {
+  bash: () => import('@shikijs/langs/bash'),
+  shell: () => import('@shikijs/langs/shell'),
+  python: () => import('@shikijs/langs/python'),
+  javascript: () => import('@shikijs/langs/javascript'),
+  typescript: () => import('@shikijs/langs/typescript'),
+  go: () => import('@shikijs/langs/go'),
+  rust: () => import('@shikijs/langs/rust'),
+  java: () => import('@shikijs/langs/java'),
+  c: () => import('@shikijs/langs/c'),
+  cpp: () => import('@shikijs/langs/cpp'),
+  csharp: () => import('@shikijs/langs/csharp'),
+  php: () => import('@shikijs/langs/php'),
+  ruby: () => import('@shikijs/langs/ruby'),
+  sql: () => import('@shikijs/langs/sql'),
+  json: () => import('@shikijs/langs/json'),
+  yaml: () => import('@shikijs/langs/yaml'),
+  ini: () => import('@shikijs/langs/ini'),
+  toml: () => import('@shikijs/langs/toml'),
+  xml: () => import('@shikijs/langs/xml'),
+  html: () => import('@shikijs/langs/html'),
+  css: () => import('@shikijs/langs/css'),
+  markdown: () => import('@shikijs/langs/markdown'),
+  dockerfile: () => import('@shikijs/langs/dockerfile'),
+  nginx: () => import('@shikijs/langs/nginx'),
+  lua: () => import('@shikijs/langs/lua'),
+  kotlin: () => import('@shikijs/langs/kotlin'),
+  swift: () => import('@shikijs/langs/swift'),
+  powershell: () => import('@shikijs/langs/powershell'),
 };
 
-/**
- * 别名 → 规范名。tagged input ("sh") 会映射到对应的 canonical 语言 ("bash") 再注册。
- */
 const aliases: Record<string, string> = {
   sh: 'bash',
   zsh: 'bash',
@@ -50,60 +63,89 @@ const aliases: Record<string, string> = {
   cs: 'csharp',
   rb: 'ruby',
   yml: 'yaml',
-  toml: 'ini',
-  html: 'xml',
-  md: 'markdown',
   docker: 'dockerfile',
   kt: 'kotlin',
   ps1: 'powershell',
   text: 'plaintext',
+  plain: 'plaintext',
 };
-
-const loaded = new Set<string>();
-const loadingPromises = new Map<string, Promise<void>>();
 
 function resolveCanonical(lang: string): string | null {
   const normalized = lang.toLowerCase().trim();
-  if (!normalized) return null;
+  if (!normalized || normalized === 'plaintext') return null;
   if (normalized in loaders) return normalized;
-  if (normalized in aliases) return aliases[normalized];
+  if (normalized in aliases) {
+    const target = aliases[normalized];
+    return target === 'plaintext' ? null : target;
+  }
   return null;
 }
 
-/**
- * 异步确保某语言的语法包已加载并注册。返回的 Promise 在加载结束后 resolve；
- * 不识别的语言会立即 resolve 而不报错（fallback 到纯文本）。
- */
-export async function ensureLanguage(lang: string): Promise<void> {
-  const canonical = resolveCanonical(lang);
-  if (!canonical) return;
-  if (loaded.has(canonical)) return;
-  const existing = loadingPromises.get(canonical);
-  if (existing) return existing;
+// ============================================
+// Highlighter 单例 + 语言按需加载
+// ============================================
 
-  const promise = loaders[canonical]()
-    .then((mod) => {
-      const def = mod.default;
-      // @ts-expect-error - hljs 期望 LanguageFn，我们动态 import 拿到的是默认导出
-      hljs.registerLanguage(canonical, def);
-      loaded.add(canonical);
-      for (const [alias, target] of Object.entries(aliases)) {
-        if (target === canonical && !hljs.getLanguage(alias)) {
-          // @ts-expect-error - 同上
-          hljs.registerLanguage(alias, def);
-        }
-      }
-    })
-    .catch(() => {
-      // 加载失败不抛，下一次再尝试
-      loadingPromises.delete(canonical);
+let highlighterPromise: Promise<HighlighterCore> | null = null;
+const loadedLangs = new Set<string>();
+const langLoading = new Map<string, Promise<void>>();
+
+async function getHighlighter(): Promise<HighlighterCore> {
+  if (!highlighterPromise) {
+    highlighterPromise = (async () => {
+      const [{ createHighlighterCore }, { createJavaScriptRegexEngine }, light, dark] =
+        await Promise.all([
+          import('shiki/core'),
+          import('shiki/engine/javascript'),
+          import('@shikijs/themes/vitesse-light'),
+          import('@shikijs/themes/vitesse-dark'),
+        ]);
+      return createHighlighterCore({
+        themes: [light.default, dark.default],
+        langs: [],
+        engine: createJavaScriptRegexEngine(),
+      });
+    })().catch((err) => {
+      // 失败时清掉缓存，下次调用重试
+      highlighterPromise = null;
+      throw err;
     });
-
-  loadingPromises.set(canonical, promise);
-  return promise;
+  }
+  return highlighterPromise;
 }
 
-function escapeHtml(input: string): string {
+export async function ensureLanguage(lang: string): Promise<string | null> {
+  const canonical = resolveCanonical(lang);
+  if (!canonical) return null;
+  if (loadedLangs.has(canonical)) return canonical;
+
+  const existing = langLoading.get(canonical);
+  if (existing) {
+    await existing;
+    return loadedLangs.has(canonical) ? canonical : null;
+  }
+
+  const task = (async () => {
+    const [hi, mod] = await Promise.all([getHighlighter(), loaders[canonical]()]);
+    await hi.loadLanguage((mod as { default: unknown }).default as never);
+    loadedLangs.add(canonical);
+  })()
+    .catch(() => {
+      // 失败不抛，调用方回退到纯文本
+    })
+    .finally(() => {
+      langLoading.delete(canonical);
+    });
+
+  langLoading.set(canonical, task);
+  await task;
+  return loadedLangs.has(canonical) ? canonical : null;
+}
+
+// ============================================
+// 渲染
+// ============================================
+
+function escapePlain(input: string): string {
   return input
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -113,78 +155,62 @@ function escapeHtml(input: string): string {
 }
 
 /**
- * 同步版本：仅使用已加载的语言，未加载时回退到纯文本。
- * 配合 ensureLanguage 使用：组件中先 await ensureLanguage(lang)，再调用此函数。
+ * 用纯文本回退渲染（保留 `<span class="line">…</span>` 结构，
+ * 让 CodeBlock 的行号 / 拷贝逻辑无感切换）。
  */
-export function highlightCode(code: string, language?: string): { html: string; language: string } {
-  const lang = (language || '').toLowerCase().trim();
-  if (lang && lang !== 'text' && lang !== 'plaintext' && hljs.getLanguage(lang)) {
-    try {
-      const result = hljs.highlight(code, { language: lang, ignoreIllegals: true });
-      return { html: result.value, language: lang };
-    } catch {
-      // fall through
-    }
-  }
-  return { html: escapeHtml(code), language: lang || 'text' };
+function plainHtml(code: string): string {
+  return code
+    .split('\n')
+    .map((line) => `<span class="line">${escapePlain(line)}</span>`)
+    .join('\n');
 }
 
-// ============================================
-// 长代码 (>50KB) 走 Web Worker 避免阻塞主线程
-// ============================================
+/**
+ * 提取 shiki `codeToHtml` 输出的 `<code>` 内层内容，去掉外层 `<pre><code>` 包装。
+ * 这样 CodeBlock 仍可用自家 `<pre>` 控制高度 / 圆角 / padding。
+ */
+function stripPreCode(html: string): string {
+  const m = html.match(/<code[^>]*>([\s\S]*?)<\/code>/);
+  return m ? m[1] : html;
+}
 
-const WORKER_THRESHOLD_BYTES = 50_000;
-
-let workerInstance: Worker | null = null;
-let workerSetupFailed = false;
-let workerCounter = 0;
-const workerPending = new Map<number, (result: { html: string; language: string }) => void>();
-
-function getHighlightWorker(): Worker | null {
-  if (workerSetupFailed) return null;
-  if (workerInstance) return workerInstance;
-  try {
-    const w = new Worker(new URL('./highlight-worker.ts', import.meta.url), { type: 'module' });
-    w.addEventListener('message', (e: MessageEvent) => {
-      const data = e.data as { id: number; result: { html: string; language: string } };
-      const resolver = workerPending.get(data.id);
-      if (resolver) {
-        workerPending.delete(data.id);
-        resolver(data.result);
-      }
-    });
-    w.addEventListener('error', () => {
-      workerSetupFailed = true;
-      workerInstance = null;
-    });
-    workerInstance = w;
-    return w;
-  } catch {
-    workerSetupFailed = true;
-    return null;
-  }
+export interface HighlightResult {
+  html: string;
+  language: string;
 }
 
 /**
  * 异步高亮：
- *   - 小代码 (<50KB): 走主线程，ensureLanguage + sync highlight
- *   - 长代码 (>=50KB): 调度到 Web Worker 中执行，避免阻塞 UI
- *   - Worker 不可用时优雅退化到主线程
+ *   - 内部确保 highlighter + 对应语言已加载
+ *   - 未识别 / 加载失败 → 回退到纯文本（也包成 line 结构）
  */
 export async function highlightCodeAsync(
   code: string,
   language?: string,
-): Promise<{ html: string; language: string }> {
-  if (code.length >= WORKER_THRESHOLD_BYTES) {
-    const worker = getHighlightWorker();
-    if (worker) {
-      const id = ++workerCounter;
-      return new Promise((resolve) => {
-        workerPending.set(id, resolve);
-        worker.postMessage({ id, code, language });
-      });
+): Promise<HighlightResult> {
+  const requested = (language || '').toLowerCase().trim();
+
+  try {
+    const canonical = await ensureLanguage(requested);
+    if (!canonical) {
+      return { html: plainHtml(code), language: requested || 'text' };
     }
+    const hi = await getHighlighter();
+    const full = hi.codeToHtml(code, {
+      lang: canonical,
+      themes: { light: THEME_LIGHT, dark: THEME_DARK },
+      defaultColor: false,
+    });
+    return { html: stripPreCode(full), language: canonical };
+  } catch {
+    return { html: plainHtml(code), language: requested || 'text' };
   }
-  if (language) await ensureLanguage(language);
-  return highlightCode(code, language);
+}
+
+/**
+ * 已废弃的同步入口：保留导出避免老调用方破坏，
+ * 直接返回 escape 后的纯文本（shiki 必须异步）。
+ */
+export function highlightCode(code: string, language?: string): HighlightResult {
+  return { html: plainHtml(code), language: (language || '').toLowerCase().trim() || 'text' };
 }

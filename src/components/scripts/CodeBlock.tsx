@@ -58,8 +58,12 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
 
   const highlightedLines = useMemo(() => {
     if (!showLineNumbers) return null;
+    // Shiki 输出形如 `<span class="line">…</span>\n<span class="line">…</span>`,
+    // 末尾通常带一个空 line 形成尾随换行 — 渲染时丢掉以避免多一个空行。
     const lines = highlightedHtml.split('\n');
-    if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+    if (lines.length > 1 && /^<span class="line"><\/span>$/.test(lines[lines.length - 1])) {
+      lines.pop();
+    }
     return lines;
   }, [highlightedHtml, showLineNumbers]);
 
@@ -113,7 +117,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
         style={maxHeight ? { maxHeight } : undefined}
       >
         {showLineNumbers && highlightedLines ? (
-          <code className="hljs block">
+          <code className="shiki-code block">
             <table className="w-full border-collapse">
               <tbody>
                 {highlightedLines.map((line, idx) => (
@@ -132,7 +136,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
           </code>
         ) : (
           <code
-            className="hljs block px-4 py-3 whitespace-pre"
+            className="shiki-code block px-4 py-3 whitespace-pre"
             dangerouslySetInnerHTML={{ __html: highlightedHtml }}
           />
         )}
