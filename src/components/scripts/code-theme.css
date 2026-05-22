@@ -29,3 +29,30 @@ html.dark .shiki-code span {
   min-height: 1em;
   width: 100%;
 }
+
+/*
+ * 查找匹配高亮（CodeBlock 内置 find 功能注入）
+ *   - 普通匹配：浅黄底
+ *   - 当前激活匹配：橙色，便于在多个命中里识别"当前位置"
+ */
+mark.ynav-code-find {
+  background-color: rgb(253 224 71 / 70%);
+  color: inherit;
+  padding: 0;
+  border-radius: 2px;
+}
+
+html.dark mark.ynav-code-find {
+  background-color: rgb(202 138 4 / 70%);
+}
+
+mark.ynav-code-find.ynav-code-find--active {
+  background-color: rgb(249 115 22);
+  color: white;
+  outline: 1px solid rgb(234 88 12);
+}
+
+html.dark mark.ynav-code-find.ynav-code-find--active {
+  background-color: rgb(234 88 12);
+  outline-color: rgb(249 115 22);
+}

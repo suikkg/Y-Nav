@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X, Save, Loader2 } from 'lucide-react';
+import { X, Save, Loader2, Maximize2, Minimize2 } from 'lucide-react';
 import { ScriptSnippet } from '../../types';
 import { SnippetInput } from '../../services/snippetService';
 import MonacoCodeEditor from './MonacoCodeEditor';
@@ -181,6 +181,7 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draftRestoredFrom, setDraftRestoredFrom] = useState<number | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const containerRef = useRef<HTMLFormElement>(null);
   const draftKey = draftKeyFor(initial);
@@ -293,25 +294,44 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
       <form
         ref={containerRef}
         onSubmit={handleSubmit}
-        className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden"
+        className={`flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden ${
+          isFullscreen
+            ? 'w-full h-full max-w-none max-h-none rounded-none'
+            : 'w-full max-w-3xl max-h-[92vh] rounded-2xl'
+        }`}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800/60">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
             {initial ? '编辑脚本' : '新建脚本'}
           </h2>
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            aria-label="关闭 (Esc)"
-          >
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setIsFullscreen((v) => !v)}
+              className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              aria-label={isFullscreen ? '退出全屏' : '全屏编辑'}
+              title={isFullscreen ? '退出全屏' : '全屏编辑'}
+            >
+              {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              aria-label="关闭 (Esc)"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        <div
+          className={`flex-1 min-h-0 px-6 py-5 ${
+            isFullscreen ? 'flex flex-col gap-4 overflow-hidden' : 'overflow-y-auto space-y-4'
+          }`}
+        >
           {draftRestoredFrom !== null && (
-            <div className="text-xs px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+            <div className="text-xs px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
               已恢复 {new Date(draftRestoredFrom).toLocaleString()} 的未保存草稿
               <button
                 type="button"
@@ -333,7 +353,7 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 shrink-0">
             <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
                 标题 <span className="text-red-500">*</span>
@@ -383,7 +403,7 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
             </div>
           </div>
 
-          <div>
+          <div className="shrink-0">
             <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
               描述
             </label>
@@ -397,23 +417,25 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
+          <div className={isFullscreen ? 'flex-1 min-h-0 flex flex-col' : ''}>
+            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5 shrink-0">
               代码 <span className="text-red-500">*</span>
               <span className="ml-2 text-slate-400 dark:text-slate-500 font-normal">
-                (⌘/Ctrl+S 保存)
+                (⌘/Ctrl+S 保存{isFullscreen ? '' : '，⛶ 全屏'})
               </span>
             </label>
-            <MonacoCodeEditor
-              value={code}
-              onChange={setCode}
-              language={language}
-              height={380}
-              onSave={submitOnSaveShortcut}
-            />
+            <div className={isFullscreen ? 'flex-1 min-h-0' : ''}>
+              <MonacoCodeEditor
+                value={code}
+                onChange={setCode}
+                language={language}
+                height={isFullscreen ? '100%' : 380}
+                onSave={submitOnSaveShortcut}
+              />
+            </div>
           </div>
 
-          <label className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer">
+          <label className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer shrink-0">
             <input
               type="checkbox"
               checked={favorite}
@@ -423,7 +445,7 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
             标记为收藏
           </label>
 
-          {error && <div className="text-sm text-red-600 dark:text-red-400">{error}</div>}
+          {error && <div className="text-sm text-red-600 dark:text-red-400 shrink-0">{error}</div>}
         </div>
 
         <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-end gap-2">

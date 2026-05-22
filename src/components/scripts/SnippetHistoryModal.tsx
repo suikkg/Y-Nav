@@ -1,14 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X, RotateCcw, Loader2, Clock, Eye } from 'lucide-react';
+import { X, RotateCcw, Loader2, Clock, Eye, GitCompareArrows, Columns2 } from 'lucide-react';
 import { ScriptSnippet, ScriptSnippetRevision } from '../../types';
 import { getRevision, listRevisions, restoreRevision } from '../../services/snippetService';
 import CodeBlock from './CodeBlock';
+import MonacoDiffEditor from './MonacoDiffEditor';
 
 interface SnippetHistoryModalProps {
   snippet: ScriptSnippet;
   onClose: () => void;
   onRestored: (restored: ScriptSnippet) => void;
 }
+
+/** 当前版本（合成项）的虚拟 id — 必须不与真实 revision id 冲突 */
+const CURRENT_REV_ID = -1;
 
 function formatDateTime(iso: string): string {
   const ts = new Date(iso).getTime();
@@ -25,9 +29,19 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
 }) => {
   const [revisions, setRevisions] = useState<ScriptSnippetRevision[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // 单视图模式：只用 selectedRevId；对比模式：用 baseRevId / compareRevId
+  const [compareMode, setCompareMode] = useState(false);
   const [selectedRevId, setSelectedRevId] = useState<number | null>(null);
-  const [activeRevision, setActiveRevision] = useState<ScriptSnippetRevision | null>(null);
-  const [loadingRev, setLoadingRev] = useState(false);
+  const [baseRevId, setBaseRevId] = useState<number | null>(null);
+  const [compareRevId, setCompareRevId] = useState<number | null>(null);
+  const [sideBySide, setSideBySide] = useState(true);
+
+  // 版本内容缓存：id -> revision；-1 用 snippet
+  const [revisionCache, setRevisionCache] = useState<Map<number, ScriptSnippetRevision>>(
+    () => new Map(),
+  );
+  const [loadingIds, setLoadingIds] = useState<Set<number>>(() => new Set());
   const [restoring, setRestoring] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -39,7 +53,16 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
       .then((rs) => {
         if (cancelled) return;
         setRevisions(rs);
-        if (rs.length > 0) setSelectedRevId(rs[0].id);
+        if (rs.length > 0) {
+          setSelectedRevId(rs[0].id);
+          // 对比模式默认值：base = 最旧的（rs[-1]，因为列表按新→旧），compare = 当前版本
+          setBaseRevId(rs[rs.length - 1].id);
+          setCompareRevId(CURRENT_REV_ID);
+        } else {
+          setSelectedRevId(CURRENT_REV_ID);
+          setBaseRevId(CURRENT_REV_ID);
+          setCompareRevId(CURRENT_REV_ID);
+        }
       })
       .catch((e: Error) => {
         if (cancelled) return;
@@ -51,28 +74,49 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
     };
   }, [snippet.id]);
 
-  // 加载选中版本的详情
-  useEffect(() => {
-    if (selectedRevId === null) {
-      setActiveRevision(null);
-      return;
-    }
-    let cancelled = false;
-    setLoadingRev(true);
-    getRevision(snippet.id, selectedRevId)
-      .then((rev) => {
-        if (!cancelled) setActiveRevision(rev);
-      })
-      .catch(() => {
-        if (!cancelled) setActiveRevision(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingRev(false);
+  // 按需加载某个版本内容
+  const ensureRevisionLoaded = useCallback(
+    (revId: number | null) => {
+      if (revId === null || revId === CURRENT_REV_ID) return;
+      if (revisionCache.has(revId)) return;
+      setLoadingIds((prev) => {
+        if (prev.has(revId)) return prev;
+        const next = new Set(prev);
+        next.add(revId);
+        return next;
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [snippet.id, selectedRevId]);
+      getRevision(snippet.id, revId)
+        .then((rev) => {
+          setRevisionCache((prev) => {
+            const next = new Map(prev);
+            next.set(revId, rev);
+            return next;
+          });
+        })
+        .catch(() => {
+          /* 静默失败 — UI 显示"加载失败" */
+        })
+        .finally(() => {
+          setLoadingIds((prev) => {
+            if (!prev.has(revId)) return prev;
+            const next = new Set(prev);
+            next.delete(revId);
+            return next;
+          });
+        });
+    },
+    [snippet.id, revisionCache],
+  );
+
+  // 选中变化时触发懒加载
+  useEffect(() => {
+    if (compareMode) {
+      ensureRevisionLoaded(baseRevId);
+      ensureRevisionLoaded(compareRevId);
+    } else {
+      ensureRevisionLoaded(selectedRevId);
+    }
+  }, [compareMode, selectedRevId, baseRevId, compareRevId, ensureRevisionLoaded]);
 
   // Esc 关闭
   useEffect(() => {
@@ -84,7 +128,7 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
   }, [onClose]);
 
   const handleRestore = useCallback(async () => {
-    if (selectedRevId === null) return;
+    if (selectedRevId === null || selectedRevId === CURRENT_REV_ID) return;
     setRestoring(true);
     try {
       const restored = await restoreRevision(snippet.id, selectedRevId);
@@ -103,6 +147,32 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
     return `${revisions.length} 个历史版本`;
   }, [revisions]);
 
+  /** 用 id 取代码 / 语言。-1 返回当前 snippet，未加载完毕返回 null */
+  const lookupCode = (id: number | null): { code: string; language: string } | null => {
+    if (id === null) return null;
+    if (id === CURRENT_REV_ID) return { code: snippet.code, language: snippet.language };
+    const rev = revisionCache.get(id);
+    if (!rev) return null;
+    return { code: rev.code, language: rev.language };
+  };
+
+  const baseEntry = compareMode ? lookupCode(baseRevId) : null;
+  const compareEntry = compareMode ? lookupCode(compareRevId) : null;
+  const singleEntry = !compareMode ? lookupCode(selectedRevId) : null;
+  const compareLoading =
+    compareMode &&
+    ((baseRevId !== null && baseRevId !== CURRENT_REV_ID && loadingIds.has(baseRevId)) ||
+      (compareRevId !== null && compareRevId !== CURRENT_REV_ID && loadingIds.has(compareRevId)));
+  const singleLoading =
+    !compareMode &&
+    selectedRevId !== null &&
+    selectedRevId !== CURRENT_REV_ID &&
+    loadingIds.has(selectedRevId);
+
+  const handleToggleCompare = () => {
+    setCompareMode((prev) => !prev);
+  };
+
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
@@ -112,7 +182,7 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
     >
       <div
         ref={containerRef}
-        className="w-full max-w-5xl max-h-[92vh] flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden"
+        className="w-full max-w-6xl max-h-[92vh] flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800/60">
           <div>
@@ -121,14 +191,41 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
               {snippet.title} · {summary}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            aria-label="关闭"
-          >
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleToggleCompare}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+                compareMode
+                  ? 'bg-accent text-white hover:bg-accent/90'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              title={compareMode ? '退出对比' : '对比两个版本'}
+              disabled={!revisions || revisions.length === 0}
+            >
+              <GitCompareArrows size={13} />
+              {compareMode ? '退出对比' : '对比版本'}
+            </button>
+            {compareMode && (
+              <button
+                type="button"
+                onClick={() => setSideBySide((v) => !v)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title={sideBySide ? '切换为统一视图' : '切换为双栏视图'}
+              >
+                <Columns2 size={13} />
+                {sideBySide ? '统一视图' : '双栏视图'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ml-1"
+              aria-label="关闭"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         {loadError && (
@@ -137,7 +234,21 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
           </div>
         )}
 
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-[260px_1fr] min-h-0">
+        {compareMode && (
+          <div className="px-6 py-2 text-[11px] text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800/60 bg-slate-50 dark:bg-slate-900/40">
+            点击每行版本旁的{' '}
+            <span className="inline-block px-1 py-px rounded bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-300 font-semibold">
+              原
+            </span>
+            <span className="mx-1">/</span>
+            <span className="inline-block px-1 py-px rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300 font-semibold">
+              新
+            </span>{' '}
+            选择要对比的两个版本
+          </div>
+        )}
+
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-[280px_1fr] min-h-0">
           {/* 版本列表 */}
           <aside className="border-b md:border-b-0 md:border-r border-slate-100 dark:border-slate-800/60 overflow-y-auto max-h-56 md:max-h-none">
             {revisions === null ? (
@@ -151,75 +262,86 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
               </div>
             ) : (
               <ul className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                {/* 当前版本（合成项） */}
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedRevId(-1)}
-                    className={`w-full text-left px-4 py-3 transition-colors ${
-                      selectedRevId === -1
-                        ? 'bg-accent/10 dark:bg-accent/20'
-                        : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <Eye size={11} className="text-accent" />
-                      <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
-                        当前版本
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                      {formatDateTime(snippet.updatedAt)}
-                    </div>
-                  </button>
-                </li>
+                <RevisionRow
+                  isCurrent
+                  id={CURRENT_REV_ID}
+                  title="当前版本"
+                  subtitle={formatDateTime(snippet.updatedAt)}
+                  compareMode={compareMode}
+                  selectedRevId={selectedRevId}
+                  baseRevId={baseRevId}
+                  compareRevId={compareRevId}
+                  onSelect={setSelectedRevId}
+                  onSetBase={setBaseRevId}
+                  onSetCompare={setCompareRevId}
+                />
                 {revisions.map((rev) => (
-                  <li key={rev.id}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedRevId(rev.id)}
-                      className={`w-full text-left px-4 py-3 transition-colors ${
-                        selectedRevId === rev.id
-                          ? 'bg-accent/10 dark:bg-accent/20'
-                          : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
-                      }`}
-                    >
-                      <div className="text-xs font-medium text-slate-900 dark:text-slate-100 truncate mb-0.5">
-                        {rev.title}
-                      </div>
-                      <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                        {formatDateTime(rev.createdAt)}
-                      </div>
-                    </button>
-                  </li>
+                  <RevisionRow
+                    key={rev.id}
+                    id={rev.id}
+                    title={rev.title}
+                    subtitle={formatDateTime(rev.createdAt)}
+                    compareMode={compareMode}
+                    selectedRevId={selectedRevId}
+                    baseRevId={baseRevId}
+                    compareRevId={compareRevId}
+                    onSelect={setSelectedRevId}
+                    onSetBase={setBaseRevId}
+                    onSetCompare={setCompareRevId}
+                  />
                 ))}
               </ul>
             )}
           </aside>
 
           {/* 详情预览 */}
-          <main className="overflow-y-auto p-4 md:p-6 bg-slate-50 dark:bg-slate-950">
-            {selectedRevId === -1 ? (
-              <CodeBlock code={snippet.code} language={snippet.language} showLineNumbers />
-            ) : loadingRev ? (
-              <div className="flex items-center justify-center py-12 text-slate-400">
-                <Loader2 size={18} className="animate-spin" />
-              </div>
-            ) : activeRevision ? (
-              <CodeBlock
-                code={activeRevision.code}
-                language={activeRevision.language}
-                showLineNumbers
-              />
+          <main className="overflow-hidden flex flex-col bg-slate-50 dark:bg-slate-950">
+            {compareMode ? (
+              compareLoading ? (
+                <div className="flex-1 flex items-center justify-center text-slate-400">
+                  <Loader2 size={18} className="animate-spin" />
+                </div>
+              ) : baseEntry && compareEntry ? (
+                <div className="flex-1 min-h-0 p-3">
+                  <MonacoDiffEditor
+                    original={baseEntry.code}
+                    modified={compareEntry.code}
+                    originalLanguage={baseEntry.language}
+                    modifiedLanguage={compareEntry.language}
+                    renderSideBySide={sideBySide}
+                    height="100%"
+                  />
+                </div>
+              ) : (
+                <div className="flex-1 flex items-center justify-center text-sm text-slate-400">
+                  请选择两个版本以查看差异
+                </div>
+              )
             ) : (
-              <div className="text-sm text-slate-400 text-center py-12">请选择一个版本</div>
+              <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                {singleLoading ? (
+                  <div className="flex items-center justify-center py-12 text-slate-400">
+                    <Loader2 size={18} className="animate-spin" />
+                  </div>
+                ) : singleEntry ? (
+                  <CodeBlock
+                    code={singleEntry.code}
+                    language={singleEntry.language}
+                    showLineNumbers
+                  />
+                ) : (
+                  <div className="text-sm text-slate-400 text-center py-12">请选择一个版本</div>
+                )}
+              </div>
             )}
           </main>
         </div>
 
         <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            恢复操作会把当前版本备份成新的历史版本
+            {compareMode
+              ? '对比模式下不可执行恢复，请退出对比再操作'
+              : '恢复操作会把当前版本备份成新的历史版本'}
           </p>
           <div className="flex items-center gap-2">
             <button
@@ -232,7 +354,11 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
             <button
               type="button"
               disabled={
-                selectedRevId === null || selectedRevId === -1 || restoring || !activeRevision
+                compareMode ||
+                selectedRevId === null ||
+                selectedRevId === CURRENT_REV_ID ||
+                restoring ||
+                !singleEntry
               }
               onClick={handleRestore}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-white text-sm font-semibold shadow-sm hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -244,6 +370,122 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
         </div>
       </div>
     </div>
+  );
+};
+
+// ============================================
+// 版本列表行（单独组件，避免主体太长）
+// ============================================
+
+interface RevisionRowProps {
+  id: number;
+  title: string;
+  subtitle: string;
+  isCurrent?: boolean;
+  compareMode: boolean;
+  selectedRevId: number | null;
+  baseRevId: number | null;
+  compareRevId: number | null;
+  onSelect: (id: number) => void;
+  onSetBase: (id: number) => void;
+  onSetCompare: (id: number) => void;
+}
+
+const RevisionRow: React.FC<RevisionRowProps> = ({
+  id,
+  title,
+  subtitle,
+  isCurrent,
+  compareMode,
+  selectedRevId,
+  baseRevId,
+  compareRevId,
+  onSelect,
+  onSetBase,
+  onSetCompare,
+}) => {
+  const isBase = baseRevId === id;
+  const isCompare = compareRevId === id;
+  const isSelectedSingle = selectedRevId === id;
+
+  // 单视图模式：整行作为按钮
+  if (!compareMode) {
+    return (
+      <li>
+        <button
+          type="button"
+          onClick={() => onSelect(id)}
+          className={`w-full text-left px-4 py-3 transition-colors ${
+            isSelectedSingle
+              ? 'bg-accent/10 dark:bg-accent/20'
+              : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+          }`}
+        >
+          <div className="flex items-center gap-1.5 mb-0.5">
+            {isCurrent && <Eye size={11} className="text-accent" />}
+            <span
+              className={`text-xs ${
+                isCurrent
+                  ? 'font-semibold text-slate-900 dark:text-slate-100'
+                  : 'font-medium text-slate-900 dark:text-slate-100'
+              } truncate`}
+            >
+              {title}
+            </span>
+          </div>
+          <div className="text-[10px] text-slate-500 dark:text-slate-400">{subtitle}</div>
+        </button>
+      </li>
+    );
+  }
+
+  // 对比模式：左侧文本 + 右侧 [原][新] 切换
+  return (
+    <li
+      className={`px-4 py-3 transition-colors ${
+        isBase || isCompare
+          ? 'bg-accent/5 dark:bg-accent/10'
+          : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 mb-0.5">
+            {isCurrent && <Eye size={11} className="text-accent shrink-0" />}
+            <span className="text-xs font-medium text-slate-900 dark:text-slate-100 truncate">
+              {title}
+            </span>
+          </div>
+          <div className="text-[10px] text-slate-500 dark:text-slate-400">{subtitle}</div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => onSetBase(id)}
+            className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+              isBase
+                ? 'bg-rose-500 text-white border-rose-500'
+                : 'bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/30'
+            }`}
+            title="设为对比的'原版'"
+          >
+            原
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetCompare(id)}
+            className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+              isCompare
+                ? 'bg-emerald-500 text-white border-emerald-500'
+                : 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-900/30'
+            }`}
+            title="设为对比的'新版'"
+          >
+            新
+          </button>
+        </div>
+      </div>
+    </li>
   );
 };
 

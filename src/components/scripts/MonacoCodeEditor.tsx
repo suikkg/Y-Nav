@@ -1,75 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as monaco from 'monaco-editor';
-import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
-import CssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
-import HtmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
-import TsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
-import { Editor, loader } from '@monaco-editor/react';
-
-/**
- * Monaco loader 与 Web Worker 初始化。
- *   - loader 强制使用本地 monaco-editor 包，绕开 CDN，兼容 CSP `default-src 'self'`
- *   - Vite 通过 ?worker 语法把每个 worker 编译成独立 chunk，按需懒加载
- */
-let configured = false;
-function configureLoaderOnce() {
-  if (configured) return;
-  configured = true;
-
-  // 配置 Monaco Workers
-  (self as unknown as { MonacoEnvironment: monaco.Environment }).MonacoEnvironment = {
-    getWorker(_workerId: string, label: string) {
-      switch (label) {
-        case 'json':
-          return new JsonWorker();
-        case 'css':
-        case 'scss':
-        case 'less':
-          return new CssWorker();
-        case 'html':
-        case 'handlebars':
-        case 'razor':
-          return new HtmlWorker();
-        case 'typescript':
-        case 'javascript':
-          return new TsWorker();
-        default:
-          return new EditorWorker();
-      }
-    },
-  };
-
-  loader.config({ monaco });
-}
-
-// 把脚本库的语言别名映射为 monaco 支持的名字
-const LANGUAGE_ALIAS: Record<string, string> = {
-  text: 'plaintext',
-  bash: 'shell',
-  zsh: 'shell',
-  sh: 'shell',
-  jsx: 'javascript',
-  js: 'javascript',
-  tsx: 'typescript',
-  ts: 'typescript',
-  rs: 'rust',
-  py: 'python',
-  rb: 'ruby',
-  kt: 'kotlin',
-  yml: 'yaml',
-  md: 'markdown',
-  docker: 'dockerfile',
-  ps1: 'powershell',
-  'c++': 'cpp',
-  cs: 'csharp',
-};
-
-function normalizeLanguage(lang?: string): string {
-  if (!lang) return 'plaintext';
-  const l = lang.toLowerCase().trim();
-  return LANGUAGE_ALIAS[l] || l;
-}
+import { Editor } from '@monaco-editor/react';
+import {
+  configureMonacoLoaderOnce,
+  getInitialMonacoTheme,
+  normalizeMonacoLanguage,
+  observeMonacoTheme,
+} from './monacoSetup';
 
 interface MonacoCodeEditorProps {
   value: string;
@@ -90,7 +27,7 @@ const MonacoCodeEditor: React.FC<MonacoCodeEditorProps> = ({
   onSave,
   autoFocus = false,
 }) => {
-  configureLoaderOnce();
+  configureMonacoLoaderOnce();
 
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const onSaveRef = useRef(onSave);
@@ -99,22 +36,8 @@ const MonacoCodeEditor: React.FC<MonacoCodeEditorProps> = ({
   }, [onSave]);
 
   // 主题跟随 <html class="dark">
-  const [theme, setTheme] = useState<'vs' | 'vs-dark'>(() =>
-    typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
-      ? 'vs-dark'
-      : 'vs',
-  );
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    const observer = new MutationObserver(() => {
-      setTheme(document.documentElement.classList.contains('dark') ? 'vs-dark' : 'vs');
-    });
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-    return () => observer.disconnect();
-  }, []);
+  const [theme, setTheme] = useState<'vs' | 'vs-dark'>(getInitialMonacoTheme);
+  useEffect(() => observeMonacoTheme(setTheme), []);
 
   const handleMount = (editor: monaco.editor.IStandaloneCodeEditor) => {
     editorRef.current = editor;
@@ -125,11 +48,11 @@ const MonacoCodeEditor: React.FC<MonacoCodeEditorProps> = ({
   };
 
   return (
-    <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
+    <div className="h-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
       <Editor
         value={value}
         onChange={(v) => onChange(v ?? '')}
-        language={normalizeLanguage(language)}
+        language={normalizeMonacoLanguage(language)}
         theme={theme}
         height={height}
         onMount={handleMount}
