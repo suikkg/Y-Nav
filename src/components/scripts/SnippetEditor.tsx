@@ -242,6 +242,7 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
       e?.preventDefault?.();
       if (!title.trim()) {
         setError('请输入标题');
+        if (isFullscreen) setIsFullscreen(false);
         return;
       }
       if (!code) {
@@ -270,7 +271,7 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
         setSubmitting(false);
       }
     },
-    [title, code, language, description, tagsText, favorite, onSubmit, draftKey],
+    [title, code, language, description, tagsText, favorite, onSubmit, draftKey, isFullscreen],
   );
 
   const handleCancel = useCallback(() => {
@@ -303,6 +304,11 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800/60">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
             {initial ? '编辑脚本' : '新建脚本'}
+            {isFullscreen && title.trim() && (
+              <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
+                · {title.trim()}
+              </span>
+            )}
           </h2>
           <button
             type="button"
@@ -319,7 +325,7 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
             isFullscreen ? 'flex flex-col gap-4 overflow-hidden' : 'overflow-y-auto space-y-4'
           }`}
         >
-          {draftRestoredFrom !== null && (
+          {!isFullscreen && draftRestoredFrom !== null && (
             <div className="text-xs px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
               已恢复 {new Date(draftRestoredFrom).toLocaleString()} 的未保存草稿
               <button
@@ -342,7 +348,11 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 shrink-0">
+          <div
+            className={`grid grid-cols-1 sm:grid-cols-2 gap-4 shrink-0 ${
+              isFullscreen ? 'hidden' : ''
+            }`}
+          >
             <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
                 标题 <span className="text-red-500">*</span>
@@ -392,7 +402,7 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
             </div>
           </div>
 
-          <div className="shrink-0">
+          <div className={`shrink-0 ${isFullscreen ? 'hidden' : ''}`}>
             <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">
               描述
             </label>
@@ -436,7 +446,11 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
             </div>
           </div>
 
-          <label className="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer shrink-0">
+          <label
+            className={`inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 cursor-pointer shrink-0 ${
+              isFullscreen ? 'hidden' : ''
+            }`}
+          >
             <input
               type="checkbox"
               checked={favorite}
