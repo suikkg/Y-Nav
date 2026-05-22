@@ -304,25 +304,14 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
             {initial ? '编辑脚本' : '新建脚本'}
           </h2>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setIsFullscreen((v) => !v)}
-              className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              aria-label={isFullscreen ? '退出全屏' : '全屏编辑'}
-              title={isFullscreen ? '退出全屏' : '全屏编辑'}
-            >
-              {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-            </button>
-            <button
-              type="button"
-              onClick={handleCancel}
-              className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              aria-label="关闭 (Esc)"
-            >
-              <X size={16} />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            aria-label="关闭 (Esc)"
+          >
+            <X size={16} />
+          </button>
         </div>
 
         <div
@@ -418,12 +407,24 @@ const SnippetEditor: React.FC<SnippetEditorProps> = ({ initial, onCancel, onSubm
           </div>
 
           <div className={isFullscreen ? 'flex-1 min-h-0 flex flex-col' : ''}>
-            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5 shrink-0">
-              代码 <span className="text-red-500">*</span>
-              <span className="ml-2 text-slate-400 dark:text-slate-500 font-normal">
-                (⌘/Ctrl+S 保存{isFullscreen ? '' : '，⛶ 全屏'})
-              </span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5 shrink-0">
+              <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                代码 <span className="text-red-500">*</span>
+                <span className="ml-2 text-slate-400 dark:text-slate-500 font-normal">
+                  (⌘/Ctrl+S 保存)
+                </span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsFullscreen((v) => !v)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                aria-label={isFullscreen ? '退出全屏' : '全屏编辑'}
+                title={isFullscreen ? '退出全屏' : '全屏编辑'}
+              >
+                {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                {isFullscreen ? '退出全屏' : '全屏'}
+              </button>
+            </div>
             <div className={isFullscreen ? 'flex-1 min-h-0' : ''}>
               <MonacoCodeEditor
                 value={code}

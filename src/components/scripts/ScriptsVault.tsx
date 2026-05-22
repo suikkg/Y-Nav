@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useDialog } from '../ui/DialogProvider';
 import ScriptsLogin from './ScriptsLogin';
@@ -14,6 +14,19 @@ const SnippetEditor = lazy(() => import('./SnippetEditor'));
 const SnippetHistoryModal = lazy(() => import('./SnippetHistoryModal'));
 const SnippetShareModal = lazy(() => import('./SnippetShareModal'));
 
+/**
+ * 进入脚本库后，浏览器空闲时把 Monaco 相关 bundle（编辑器 + diff 编辑器）
+ * 预拉到缓存。首次点击「编辑」/「历史」就不再卡顿。
+ */
+function prefetchMonacoBundles(): void {
+  void import('./SnippetEditor');
+  void import('./SnippetHistoryModal');
+  // monacoSetup 在 SnippetEditor / SnippetHistoryModal 内被引用，但显式再拉一次
+  // 避免 chunk graph 把 Monaco 切到次级子图后仍需 round-trip
+  void import('./MonacoCodeEditor');
+  void import('./MonacoDiffEditor');
+}
+
 const Fallback: React.FC<{ label: string }> = ({ label }) => (
   <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
     <div className="rounded-2xl bg-white dark:bg-slate-900 px-6 py-5 flex items-center gap-3 shadow-2xl">
@@ -26,6 +39,20 @@ const Fallback: React.FC<{ label: string }> = ({ label }) => (
 const ScriptsVault: React.FC<{ onExit: () => void }> = ({ onExit }) => {
   const { notify } = useDialog();
   const data = useScriptsVaultData();
+
+  // 浏览器空闲时预拉 Monaco bundles，避免首次点编辑/历史时卡顿
+  useEffect(() => {
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    if (typeof w.requestIdleCallback === 'function') {
+      const handle = w.requestIdleCallback(prefetchMonacoBundles, { timeout: 3000 });
+      return () => w.cancelIdleCallback?.(handle);
+    }
+    const t = setTimeout(prefetchMonacoBundles, 800);
+    return () => clearTimeout(t);
+  }, []);
 
   if (!data.sessionState) {
     return (

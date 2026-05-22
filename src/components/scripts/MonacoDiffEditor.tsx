@@ -34,7 +34,7 @@ const MonacoDiffEditor: React.FC<MonacoDiffEditorProps> = ({
   useEffect(() => observeMonacoTheme(setTheme), []);
 
   return (
-    <div className="h-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
+    <div className="h-full overflow-hidden">
       <DiffEditor
         original={original}
         modified={modified}
@@ -59,9 +59,17 @@ const MonacoDiffEditor: React.FC<MonacoDiffEditorProps> = ({
           renderOverviewRuler: false,
           diffWordWrap: 'on',
           ignoreTrimWhitespace: false,
+          // Monaco 新版的更平滑 diff 算法（≥ 0.46）— 行内变更着色更接近 GitHub
+          diffAlgorithm: 'advanced',
+          // 只读场景下隐藏左侧的 revert 箭头，省空间
+          renderMarginRevertIcon: false,
+          // 默认展开所有上下文，不要自动折叠未变更块
+          hideUnchangedRegions: { enabled: false },
+          padding: { top: 8, bottom: 8 },
           scrollbar: {
             verticalScrollbarSize: 10,
             horizontalScrollbarSize: 10,
+            useShadows: false,
           },
           fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, "Courier New", monospace',
         }}

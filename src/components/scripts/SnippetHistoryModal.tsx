@@ -1,5 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X, RotateCcw, Loader2, Clock, Eye, GitCompareArrows, Columns2 } from 'lucide-react';
+import {
+  X,
+  RotateCcw,
+  Loader2,
+  Clock,
+  Eye,
+  GitCompareArrows,
+  Columns2,
+  Maximize2,
+  Minimize2,
+} from 'lucide-react';
 import { ScriptSnippet, ScriptSnippetRevision } from '../../types';
 import { getRevision, listRevisions, restoreRevision } from '../../services/snippetService';
 import CodeBlock from './CodeBlock';
@@ -36,6 +46,7 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
   const [baseRevId, setBaseRevId] = useState<number | null>(null);
   const [compareRevId, setCompareRevId] = useState<number | null>(null);
   const [sideBySide, setSideBySide] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // 版本内容缓存：id -> revision；-1 用 snippet
   const [revisionCache, setRevisionCache] = useState<Map<number, ScriptSnippetRevision>>(
@@ -175,23 +186,31 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      className={`fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm ${
+        isFullscreen || compareMode ? 'p-0 sm:p-2' : 'p-4'
+      }`}
       role="dialog"
       aria-modal="true"
       aria-label="版本历史"
     >
       <div
         ref={containerRef}
-        className="w-full max-w-6xl max-h-[92vh] flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden"
+        className={`flex flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden ${
+          isFullscreen
+            ? 'w-full h-full max-w-none max-h-none rounded-none sm:rounded-2xl'
+            : compareMode
+              ? 'w-full max-w-[1600px] h-[96vh] max-h-[96vh] rounded-2xl'
+              : 'w-full max-w-6xl max-h-[92vh] rounded-2xl'
+        }`}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800/60">
-          <div>
+        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-100 dark:border-slate-800/60">
+          <div className="min-w-0">
             <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">版本历史</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
               {snippet.title} · {summary}
             </p>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             <button
               type="button"
               onClick={handleToggleCompare}
@@ -219,8 +238,17 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
             )}
             <button
               type="button"
+              onClick={() => setIsFullscreen((v) => !v)}
+              className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              aria-label={isFullscreen ? '退出全屏' : '全屏'}
+              title={isFullscreen ? '退出全屏' : '全屏'}
+            >
+              {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+            <button
+              type="button"
               onClick={onClose}
-              className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ml-1"
+              className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               aria-label="关闭"
             >
               <X size={16} />
@@ -235,16 +263,16 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
         )}
 
         {compareMode && (
-          <div className="px-6 py-2 text-[11px] text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800/60 bg-slate-50 dark:bg-slate-900/40">
-            点击每行版本旁的{' '}
+          <div className="px-6 py-1.5 text-[11px] text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800/60 bg-slate-50 dark:bg-slate-900/40 flex items-center gap-1.5 shrink-0">
+            点击版本旁的
             <span className="inline-block px-1 py-px rounded bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-300 font-semibold">
               原
             </span>
-            <span className="mx-1">/</span>
+            /
             <span className="inline-block px-1 py-px rounded bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300 font-semibold">
               新
-            </span>{' '}
-            选择要对比的两个版本
+            </span>
+            选两个版本对比
           </div>
         )}
 
@@ -302,7 +330,7 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
                   <Loader2 size={18} className="animate-spin" />
                 </div>
               ) : baseEntry && compareEntry ? (
-                <div className="flex-1 min-h-0 p-3">
+                <div className="flex-1 min-h-0">
                   <MonacoDiffEditor
                     original={baseEntry.code}
                     modified={compareEntry.code}
@@ -337,13 +365,17 @@ const SnippetHistoryModal: React.FC<SnippetHistoryModalProps> = ({
           </main>
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+        <div
+          className={`border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between gap-3 ${
+            compareMode ? 'px-6 py-2' : 'px-6 py-4'
+          }`}
+        >
+          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
             {compareMode
               ? '对比模式下不可执行恢复，请退出对比再操作'
               : '恢复操作会把当前版本备份成新的历史版本'}
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={onClose}
