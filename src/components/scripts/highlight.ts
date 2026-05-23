@@ -1,54 +1,54 @@
 /**
  * Shiki 语法高亮（VS Code 同款 TextMate 引擎，JS Regex 版，免 WASM）
  *
- * 设计要点：
- *   - 用 `shiki/core` + `shiki/engine/javascript` 自建 highlighter，按需 import 语法包
- *   - 双主题 vitesse-light / vitesse-dark，`defaultColor: false` 让 shiki 写入
- *     `--shiki-light` / `--shiki-dark` CSS 变量；亮/暗切换由 `code-theme.css`
- *     里的 `html.dark` 选择器控制（与项目的 dark mode 策略保持一致）
- *   - 输出剥离最外层 `<pre><code>`，仅返回 `<span class="line">…</span>` 链，
- *     交给 `CodeBlock.tsx` 用自家容器渲染（保留圆角 / 滚动 / 最大高度等样式）
+ * 主线程在这里只负责：
+ *   1) 解析语言别名 → canonical name
+ *   2) 太大 / 太长行的代码直接走 plain fallback —— shiki 对超大 minified bundle
+ *      的 tokenize 是秒级，搬进 worker 也救不了，所以预先放行
+ *   3) 其余统一 postMessage 给 shiki worker，由 worker 异步返回 HTML
+ *
+ * 之所以要 worker：shiki 的 JS 正则引擎是 *同步* 跑完所有行，
+ * 1000+ 行 Python 主线程要 ~800ms，期间 UI 整个冻住、查找框输入都没反应。
+ * 移到 worker 后 plain text 立即上屏，coloring 后台跑完再覆盖。
  */
-
-import type { HighlighterCore } from 'shiki/core';
 
 const THEME_LIGHT = 'vitesse-light';
 const THEME_DARK = 'vitesse-dark';
 
 /**
- * 语言 → 动态 import loader。Shiki 把每种语言切成独立 chunk，
- * 首屏只加载核心 + 引擎，使用时再拉对应语法。
+ * shiki worker 实际支持的语言。和 `shiki.worker.ts` 里的 `loaders` 同步维护。
+ * 这里只用来做"是否走 worker"的判定；真正的语言模块在 worker 内 import。
  */
-const loaders: Record<string, () => Promise<unknown>> = {
-  bash: () => import('@shikijs/langs/bash'),
-  shell: () => import('@shikijs/langs/shell'),
-  python: () => import('@shikijs/langs/python'),
-  javascript: () => import('@shikijs/langs/javascript'),
-  typescript: () => import('@shikijs/langs/typescript'),
-  go: () => import('@shikijs/langs/go'),
-  rust: () => import('@shikijs/langs/rust'),
-  java: () => import('@shikijs/langs/java'),
-  c: () => import('@shikijs/langs/c'),
-  cpp: () => import('@shikijs/langs/cpp'),
-  csharp: () => import('@shikijs/langs/csharp'),
-  php: () => import('@shikijs/langs/php'),
-  ruby: () => import('@shikijs/langs/ruby'),
-  sql: () => import('@shikijs/langs/sql'),
-  json: () => import('@shikijs/langs/json'),
-  yaml: () => import('@shikijs/langs/yaml'),
-  ini: () => import('@shikijs/langs/ini'),
-  toml: () => import('@shikijs/langs/toml'),
-  xml: () => import('@shikijs/langs/xml'),
-  html: () => import('@shikijs/langs/html'),
-  css: () => import('@shikijs/langs/css'),
-  markdown: () => import('@shikijs/langs/markdown'),
-  dockerfile: () => import('@shikijs/langs/dockerfile'),
-  nginx: () => import('@shikijs/langs/nginx'),
-  lua: () => import('@shikijs/langs/lua'),
-  kotlin: () => import('@shikijs/langs/kotlin'),
-  swift: () => import('@shikijs/langs/swift'),
-  powershell: () => import('@shikijs/langs/powershell'),
-};
+const knownLangs = new Set([
+  'bash',
+  'shell',
+  'python',
+  'javascript',
+  'typescript',
+  'go',
+  'rust',
+  'java',
+  'c',
+  'cpp',
+  'csharp',
+  'php',
+  'ruby',
+  'sql',
+  'json',
+  'yaml',
+  'ini',
+  'toml',
+  'xml',
+  'html',
+  'css',
+  'markdown',
+  'dockerfile',
+  'nginx',
+  'lua',
+  'kotlin',
+  'swift',
+  'powershell',
+]);
 
 const aliases: Record<string, string> = {
   sh: 'bash',
@@ -73,72 +73,94 @@ const aliases: Record<string, string> = {
 function resolveCanonical(lang: string): string | null {
   const normalized = lang.toLowerCase().trim();
   if (!normalized || normalized === 'plaintext') return null;
-  if (normalized in loaders) return normalized;
+  if (knownLangs.has(normalized)) return normalized;
   if (normalized in aliases) {
     const target = aliases[normalized];
-    return target === 'plaintext' ? null : target;
+    return target !== 'plaintext' && knownLangs.has(target) ? target : null;
   }
   return null;
 }
 
 // ============================================
-// Highlighter 单例 + 语言按需加载
+// 太大 / minified 代码跳过 shiki
 // ============================================
+//
+// 实测：一个 994KB / 47 行的 minified bundle，shiki 的 JS 正则引擎要 ~10s 才能
+// tokenize 完。即便扔进 worker，10s 后才上色，用户感知到的还是"半天没出
+// 高亮"。一旦命中下面任一阈值，直接 plain fallback，保证打开 < 100ms。
+//
+//   - MAX_HIGHLIGHT_CHARS: 整段代码总长度上限
+//   - MAX_LINE_CHARS:      任意单行长度上限（专门抓 minified one-liner）
 
-let highlighterPromise: Promise<HighlighterCore> | null = null;
-const loadedLangs = new Set<string>();
-const langLoading = new Map<string, Promise<void>>();
+const MAX_HIGHLIGHT_CHARS = 250_000;
+const MAX_LINE_CHARS = 8_000;
 
-async function getHighlighter(): Promise<HighlighterCore> {
-  if (!highlighterPromise) {
-    highlighterPromise = (async () => {
-      const [{ createHighlighterCore }, { createJavaScriptRegexEngine }, light, dark] =
-        await Promise.all([
-          import('shiki/core'),
-          import('shiki/engine/javascript'),
-          import('@shikijs/themes/vitesse-light'),
-          import('@shikijs/themes/vitesse-dark'),
-        ]);
-      return createHighlighterCore({
-        themes: [light.default, dark.default],
-        langs: [],
-        engine: createJavaScriptRegexEngine(),
-      });
-    })().catch((err) => {
-      // 失败时清掉缓存，下次调用重试
-      highlighterPromise = null;
-      throw err;
-    });
+function isTooBigToHighlight(code: string): boolean {
+  if (code.length > MAX_HIGHLIGHT_CHARS) return true;
+  let cur = 0;
+  for (let i = 0; i < code.length; i++) {
+    if (code.charCodeAt(i) === 10) {
+      if (cur > MAX_LINE_CHARS) return true;
+      cur = 0;
+    } else {
+      cur++;
+    }
   }
-  return highlighterPromise;
+  return cur > MAX_LINE_CHARS;
 }
 
-export async function ensureLanguage(lang: string): Promise<string | null> {
-  const canonical = resolveCanonical(lang);
-  if (!canonical) return null;
-  if (loadedLangs.has(canonical)) return canonical;
+// ============================================
+// Worker 通信
+// ============================================
 
-  const existing = langLoading.get(canonical);
-  if (existing) {
-    await existing;
-    return loadedLangs.has(canonical) ? canonical : null;
+interface WorkerResponse {
+  id: number;
+  html: string | null;
+}
+
+let worker: Worker | null = null;
+let nextReqId = 0;
+const pending = new Map<number, (html: string | null) => void>();
+
+function getWorker(): Worker | null {
+  if (worker) return worker;
+  if (typeof Worker === 'undefined') return null; // SSR / jsdom
+  try {
+    worker = new Worker(new URL('./shiki.worker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+      const { id, html } = e.data;
+      const resolve = pending.get(id);
+      if (resolve) {
+        pending.delete(id);
+        resolve(html);
+      }
+    };
+    worker.onerror = () => {
+      // worker 跪了：把所有等待中的请求喂 null，让 caller 走 plainHtml；
+      // 下一次再 getWorker() 时会重建。
+      pending.forEach((r) => r(null));
+      pending.clear();
+      try {
+        worker?.terminate();
+      } catch {
+        // ignore
+      }
+      worker = null;
+    };
+  } catch {
+    worker = null;
   }
+  return worker;
+}
 
-  const task = (async () => {
-    const [hi, mod] = await Promise.all([getHighlighter(), loaders[canonical]()]);
-    await hi.loadLanguage((mod as { default: unknown }).default as never);
-    loadedLangs.add(canonical);
-  })()
-    .catch(() => {
-      // 失败不抛，调用方回退到纯文本
-    })
-    .finally(() => {
-      langLoading.delete(canonical);
-    });
-
-  langLoading.set(canonical, task);
-  await task;
-  return loadedLangs.has(canonical) ? canonical : null;
+function highlightInWorker(code: string, lang: string): Promise<string | null> {
+  const w = getWorker();
+  if (!w) return Promise.resolve(null);
+  const id = ++nextReqId;
+  return new Promise((resolve) => {
+    pending.set(id, resolve);
+    w.postMessage({ id, code, lang });
+  });
 }
 
 // ============================================
@@ -155,8 +177,8 @@ function escapePlain(input: string): string {
 }
 
 /**
- * 用纯文本回退渲染（保留 `<span class="line">…</span>` 结构，
- * 让 CodeBlock 的行号 / 拷贝逻辑无感切换）。
+ * 纯文本回退：保留 `<span class="line">…</span>` 结构，让 CodeBlock 的行号 /
+ * 拷贝逻辑跟着 shiki 路径走，避免两套布局。
  */
 function plainHtml(code: string): string {
   return code
@@ -165,10 +187,7 @@ function plainHtml(code: string): string {
     .join('\n');
 }
 
-/**
- * 提取 shiki `codeToHtml` 输出的 `<code>` 内层内容，去掉外层 `<pre><code>` 包装。
- * 这样 CodeBlock 仍可用自家 `<pre>` 控制高度 / 圆角 / padding。
- */
+/** 剥掉 shiki `codeToHtml` 输出最外层 `<pre><code>` 包装。 */
 function stripPreCode(html: string): string {
   const m = html.match(/<code[^>]*>([\s\S]*?)<\/code>/);
   return m ? m[1] : html;
@@ -181,35 +200,34 @@ export interface HighlightResult {
 
 /**
  * 异步高亮：
- *   - 内部确保 highlighter + 对应语言已加载
- *   - 未识别 / 加载失败 → 回退到纯文本（也包成 line 结构）
+ *   - 语言不支持 / 太大 / worker 不可用 → 全部走 plain fallback
+ *   - 其余 postMessage 给 worker，由 worker 加载语法 + tokenize
  */
 export async function highlightCodeAsync(
   code: string,
   language?: string,
 ): Promise<HighlightResult> {
   const requested = (language || '').toLowerCase().trim();
-
-  try {
-    const canonical = await ensureLanguage(requested);
-    if (!canonical) {
-      return { html: plainHtml(code), language: requested || 'text' };
-    }
-    const hi = await getHighlighter();
-    const full = hi.codeToHtml(code, {
-      lang: canonical,
-      themes: { light: THEME_LIGHT, dark: THEME_DARK },
-      defaultColor: false,
-    });
-    return { html: stripPreCode(full), language: canonical };
-  } catch {
+  const canonical = resolveCanonical(requested);
+  if (!canonical) {
     return { html: plainHtml(code), language: requested || 'text' };
+  }
+  if (isTooBigToHighlight(code)) {
+    return { html: plainHtml(code), language: canonical };
+  }
+  try {
+    const html = await highlightInWorker(code, canonical);
+    if (html == null) {
+      return { html: plainHtml(code), language: canonical };
+    }
+    return { html: stripPreCode(html), language: canonical };
+  } catch {
+    return { html: plainHtml(code), language: canonical };
   }
 }
 
 /**
- * 已废弃的同步入口：保留导出避免老调用方破坏，
- * 直接返回 escape 后的纯文本（shiki 必须异步）。
+ * 同步入口（已废弃，但还有老调用方）：直接返回 plain，shiki 必须异步。
  */
 export function highlightCode(code: string, language?: string): HighlightResult {
   return { html: plainHtml(code), language: (language || '').toLowerCase().trim() || 'text' };
