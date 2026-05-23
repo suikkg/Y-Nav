@@ -10,6 +10,12 @@ interface CodeBlockProps {
   maxHeight?: number;
   /** 是否显示行号 */
   showLineNumbers?: boolean;
+  /**
+   * 是否让 CodeBlock 自己撑满父容器（flex column + 内部 pre 滚动）。
+   * 打开后顶部 header / 查找栏不再被代码区滚动带走 —— 适合 SnippetViewer
+   * 这种"父容器限高"的场景。默认 false 保留原行为（CodeBlock 自适应高度，外层滚）。
+   */
+  fillHeight?: boolean;
 }
 
 function escapePlain(input: string): string {
@@ -91,6 +97,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
   language,
   maxHeight,
   showLineNumbers = false,
+  fillHeight = false,
 }) => {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -300,7 +307,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative group rounded-2xl border border-slate-200 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-900/70 overflow-hidden"
+      className={`relative group rounded-2xl border border-slate-200 dark:border-slate-700/60 bg-slate-50 dark:bg-slate-900/70 overflow-hidden ${fillHeight ? 'flex flex-col h-full min-h-0' : ''}`}
       onMouseEnter={() => {
         isHoveringRef.current = true;
       }}
@@ -397,7 +404,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
       )}
       <pre
         ref={codeRootRef}
-        className="overflow-auto text-sm leading-relaxed font-mono text-slate-800 dark:text-slate-100"
+        className={`overflow-auto text-sm leading-relaxed font-mono text-slate-800 dark:text-slate-100 ${fillHeight ? 'flex-1 min-h-0' : ''}`}
         style={maxHeight ? { maxHeight } : undefined}
       >
         {codeContent}
