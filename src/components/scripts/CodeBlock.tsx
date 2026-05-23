@@ -144,6 +144,39 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
     return lines;
   }, [highlightedHtml, showLineNumbers]);
 
+  // 把代码主体 JSX 用 useMemo 锁住引用 —— 这样 matchCount / activeMatchIdx / findOpen 等
+  // 状态变化触发的 CodeBlock 重渲染不会让 React 再次跑 dangerouslySetInnerHTML 的提交流程，
+  // 我们手动注入到 td 里的 <mark> 就能保住，不会被 React 刷掉。
+  const codeContent = useMemo(() => {
+    if (showLineNumbers && highlightedLines) {
+      return (
+        <code className="shiki-code block">
+          <table className="w-full border-collapse">
+            <tbody>
+              {highlightedLines.map((line, idx) => (
+                <tr key={idx}>
+                  <td className="select-none text-right pr-3 pl-4 text-slate-400 dark:text-slate-500 align-top w-12">
+                    {idx + 1}
+                  </td>
+                  <td
+                    className="pr-4 py-0 whitespace-pre"
+                    dangerouslySetInnerHTML={{ __html: line || ' ' }}
+                  />
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </code>
+      );
+    }
+    return (
+      <code
+        className="shiki-code block px-4 py-3 whitespace-pre"
+        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+      />
+    );
+  }, [showLineNumbers, highlightedLines, highlightedHtml]);
+
   // ============================================
   // 查找：query 或 渲染内容变化时重新匹配
   // ============================================
@@ -367,30 +400,7 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
         className="overflow-auto text-sm leading-relaxed font-mono text-slate-800 dark:text-slate-100"
         style={maxHeight ? { maxHeight } : undefined}
       >
-        {showLineNumbers && highlightedLines ? (
-          <code className="shiki-code block">
-            <table className="w-full border-collapse">
-              <tbody>
-                {highlightedLines.map((line, idx) => (
-                  <tr key={idx}>
-                    <td className="select-none text-right pr-3 pl-4 text-slate-400 dark:text-slate-500 align-top w-12">
-                      {idx + 1}
-                    </td>
-                    <td
-                      className="pr-4 py-0 whitespace-pre"
-                      dangerouslySetInnerHTML={{ __html: line || ' ' }}
-                    />
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </code>
-        ) : (
-          <code
-            className="shiki-code block px-4 py-3 whitespace-pre"
-            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-          />
-        )}
+        {codeContent}
       </pre>
     </div>
   );
