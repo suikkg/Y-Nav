@@ -140,49 +140,32 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
     };
   }, [code, language]);
 
-  const highlightedLines = useMemo(() => {
-    if (!showLineNumbers) return null;
-    // Shiki 输出形如 `<span class="line">…</span>\n<span class="line">…</span>`,
-    // 末尾通常带一个空 line 形成尾随换行 — 渲染时丢掉以避免多一个空行。
-    const lines = highlightedHtml.split('\n');
-    if (lines.length > 1 && /^<span class="line"><\/span>$/.test(lines[lines.length - 1])) {
-      lines.pop();
+  const highlightedHtmlForRender = useMemo(() => {
+    if (!showLineNumbers) return highlightedHtml;
+    // Shiki 末尾通常带一个空 `<span class="line"></span>` 形成尾随换行，
+    // 渲染时丢掉以避免多一个空行 / 多一个行号。
+    const trailing = '\n<span class="line"></span>';
+    if (highlightedHtml.endsWith(trailing)) {
+      return highlightedHtml.slice(0, -trailing.length);
     }
-    return lines;
+    return highlightedHtml;
   }, [highlightedHtml, showLineNumbers]);
 
   // 把代码主体 JSX 用 useMemo 锁住引用 —— 这样 matchCount / activeMatchIdx / findOpen 等
   // 状态变化触发的 CodeBlock 重渲染不会让 React 再次跑 dangerouslySetInnerHTML 的提交流程，
-  // 我们手动注入到 td 里的 <mark> 就能保住，不会被 React 刷掉。
-  const codeContent = useMemo(() => {
-    if (showLineNumbers && highlightedLines) {
-      return (
-        <code className="shiki-code block">
-          <table className="w-full border-collapse">
-            <tbody>
-              {highlightedLines.map((line, idx) => (
-                <tr key={idx}>
-                  <td className="select-none text-right pr-3 pl-4 text-slate-400 dark:text-slate-500 align-top w-12">
-                    {idx + 1}
-                  </td>
-                  <td
-                    className="pr-4 py-0 whitespace-pre"
-                    dangerouslySetInnerHTML={{ __html: line || ' ' }}
-                  />
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </code>
-      );
-    }
-    return (
+  // 我们手动注入到代码里的 <mark> 就能保住，不会被 React 刷掉。
+  //
+  // 行号通过 CSS counter 实现（见 code-theme.css），不再走 <table><tr><td> 一行一节点，
+  // 避免几千行代码渲染卡顿。
+  const codeContent = useMemo(
+    () => (
       <code
-        className="shiki-code block px-4 py-3 whitespace-pre"
-        dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+        className={`shiki-code block px-4 py-3 whitespace-pre${showLineNumbers ? ' with-line-numbers' : ''}`}
+        dangerouslySetInnerHTML={{ __html: highlightedHtmlForRender }}
       />
-    );
-  }, [showLineNumbers, highlightedLines, highlightedHtml]);
+    ),
+    [showLineNumbers, highlightedHtmlForRender],
+  );
 
   // ============================================
   // 查找：query 或 渲染内容变化时重新匹配
@@ -210,8 +193,8 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
     } else {
       setActiveMatchIdx(-1);
     }
-    // 依赖 highlightedHtml/highlightedLines/showLineNumbers 因为它们决定 DOM 内容
-  }, [findQuery, highlightedHtml, highlightedLines, showLineNumbers]);
+    // 依赖 highlightedHtmlForRender/showLineNumbers 因为它们决定 DOM 内容
+  }, [findQuery, highlightedHtmlForRender, showLineNumbers]);
 
   // 切换 active 高亮 + 滚动到视图（用于 prev/next 导航）
   useEffect(() => {

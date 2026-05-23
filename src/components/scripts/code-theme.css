@@ -31,6 +31,37 @@ html.dark .shiki-code span {
 }
 
 /*
+ * 行号：用 CSS counter 取代以前的 <table><tr><td> 行号方案。
+ * 这样大代码块只需要一次 innerHTML 写入，省掉 N 个 React 节点，
+ * 打开几千行代码不会再卡顿。
+ *
+ *   - .shiki-code 上 counter-reset
+ *   - 每个 .line counter-increment + ::before 渲染数字
+ *   - 行号 absolute 到 padding-left 区域，不挤占代码列宽
+ */
+.shiki-code.with-line-numbers {
+  counter-reset: line;
+  padding-left: 3.5rem;
+}
+.shiki-code.with-line-numbers .line {
+  position: relative;
+  counter-increment: line;
+}
+.shiki-code.with-line-numbers .line::before {
+  content: counter(line);
+  position: absolute;
+  left: -3rem;
+  width: 2.5rem;
+  text-align: right;
+  color: rgb(148 163 184); /* slate-400 */
+  user-select: none;
+  pointer-events: none;
+}
+html.dark .shiki-code.with-line-numbers .line::before {
+  color: rgb(100 116 139); /* slate-500 */
+}
+
+/*
  * 查找匹配高亮（CodeBlock 内置 find 功能注入）
  *   - 普通匹配：浅黄底
  *   - 当前激活匹配：橙色，便于在多个命中里识别"当前位置"
