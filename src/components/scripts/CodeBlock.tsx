@@ -160,13 +160,23 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
     const marks = applyFindHighlights(root, findQuery);
     marksRef.current = marks;
     setMatchCount(marks.length);
-    setActiveMatchIdx(marks.length > 0 ? 0 : -1);
+    // 关键：marks 重建后，必须当场把第一个标成 active + 滚到视图。
+    // 因为 setActiveMatchIdx(0) 在前一次 activeMatchIdx 已经是 0 时是 no-op，
+    // 不会触发下面那个 [activeMatchIdx] effect — 那种情况下新建的 marks 会拿不到 active 样式也不滚动。
+    if (marks.length > 0) {
+      marks[0].classList.add(FIND_ACTIVE_CLASS);
+      marks[0].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      setActiveMatchIdx(0);
+    } else {
+      setActiveMatchIdx(-1);
+    }
     // 依赖 highlightedHtml/highlightedLines/showLineNumbers 因为它们决定 DOM 内容
   }, [findQuery, highlightedHtml, highlightedLines, showLineNumbers]);
 
-  // 切换 active 高亮 + 滚动到视图
+  // 切换 active 高亮 + 滚动到视图（用于 prev/next 导航）
   useEffect(() => {
     const marks = marksRef.current;
+    if (marks.length === 0) return;
     marks.forEach((m, i) => {
       if (i === activeMatchIdx) {
         m.classList.add(FIND_ACTIVE_CLASS);
